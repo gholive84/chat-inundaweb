@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
+const aiResponder = require('../services/aiResponder');
 
 // Webhook do Evolution — endpoint publico, mas valida instance_name + token
 // Evolution chama POST /api/webhooks/evolution/{instance}/{token}
@@ -137,8 +138,14 @@ async function handleIncomingMessage(app, inst, payload) {
     io?.to(`conv:${convId}`).emit('message:new', { conversationId: convId, message: insertedRow });
     io?.to(`company:${inst.company_id}`).emit('conversation:update', { conversationId: convId });
 
-    // Se for mensagem de contato (não nossa) e IA ativa e não pausada → enfileira pra IA responder
-    // TODO Fase 2: BullMQ aiQueue.add({ conversationId: convId, messageId: insertedRow.id })
+    // Mensagem de contato (não nossa) → tenta resposta da IA (assincrono, fire-and-forget)
+    if (!fromMe) {
+      setImmediate(() => {
+        aiResponder.maybeRespond({ conversationId: convId, app })
+          .then((r) => { if (r?.skipped) console.log('[AI] skipped:', r.skipped); else if (r?.ok) console.log('[AI] responded msg', r.msgId); })
+          .catch((e) => console.error('[AI] error:', e.message));
+      });
+    }
   }
 }
 
