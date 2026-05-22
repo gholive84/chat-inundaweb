@@ -85,6 +85,13 @@ export default function Chat() {
 
   useEffect(() => { try { localStorage.setItem('chat_info_panel_open', String(infoOpen)); } catch {} }, [infoOpen]);
 
+  // Page title com contagem de unread
+  useEffect(() => {
+    const total = items.reduce((acc, c) => acc + (c.unread_count || 0), 0);
+    document.title = total > 0 ? `(${total}) Chat Inunda` : 'Chat Inunda';
+    return () => { document.title = 'Chat Inunda'; };
+  }, [items]);
+
   useEffect(() => {
     if (!socket) return;
     const onUpdate = () => load();
