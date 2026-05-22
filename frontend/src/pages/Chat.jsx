@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import useSocketStore from '../store/socketStore';
 import ChatPanel from '../components/ChatPanel';
+import ContactInfoPanel from '../components/ContactInfoPanel';
 
 function ConversationList({ items, activeId, onSelect }) {
   return (
@@ -52,15 +53,32 @@ export default function Chat() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
+  const [activeConv, setActiveConv] = useState(null);
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('open');
+  const [assigned, setAssigned] = useState('all'); // all | me | unassigned
+  const [infoOpen, setInfoOpen] = useState(() => {
+    try { return localStorage.getItem('chat_info_panel_open') !== 'false'; } catch { return true; }
+  });
   const socket = useSocketStore((s) => s.socket) || useSocketStore.getState().connect();
   const activeId = parseInt(id);
 
   function load() {
-    api.get('/conversations').then((r) => setItems(r.data)).catch(() => {});
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (assigned !== 'all') params.set('assigned', assigned);
+    if (search.trim()) params.set('search', search.trim());
+    api.get(`/conversations?${params}`).then((r) => setItems(r.data)).catch(() => {});
   }
-  useEffect(load, []);
+  // debounce search
+  useEffect(() => {
+    const t = setTimeout(load, 300);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, assigned, search]);
 
-  // Realtime: qualquer update de conversa re-fetch da lista (mais simples que merge)
+  useEffect(() => { try { localStorage.setItem('chat_info_panel_open', String(infoOpen)); } catch {} }, [infoOpen]);
+
   useEffect(() => {
     if (!socket) return;
     const onUpdate = () => load();
@@ -74,18 +92,70 @@ export default function Chat() {
 
   return (
     <div className="flex h-full">
-      {/* Lista — esconde no mobile quando tem conversa aberta */}
+      {/* Lista */}
       <div className={`${activeId ? 'hidden md:flex' : 'flex'} w-full md:w-80 flex-shrink-0 border-r flex-col`}
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
-        <div className="p-4 border-b" style={{ borderColor: 'var(--inunda-border)' }}>
-          <h2 className="font-semibold text-sm" style={{ color: 'var(--inunda-text)' }}>Conversas</h2>
+        <div className="p-3 border-b space-y-2" style={{ borderColor: 'var(--inunda-border)' }}>
+          <h2 className="font-semibold text-sm px-1" style={{ color: 'var(--inunda-text)' }}>Conversas</h2>
+          <input value={search} onChange={(e) => setSearch(e.target.value)}
+            placeholder="🔍 Buscar nome, número, msg..."
+            className="w-full bg-white/5 border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-400"
+            style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+          <div className="flex gap-1">
+            {[
+              { v: 'open', l: 'Abertas' },
+              { v: 'resolved', l: 'Resolvidas' },
+              { v: 'all', l: 'Todas' },
+            ].map((opt) => (
+              <button key={opt.v} onClick={() => setStatus(opt.v)}
+                className="text-[11px] px-2 py-1 rounded-md transition-colors flex-1"
+                style={{
+                  background: status === opt.v ? 'var(--inunda-cyan-faint)' : 'transparent',
+                  color: status === opt.v ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+                }}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            {[
+              { v: 'all', l: 'Todos' },
+              { v: 'me', l: 'Minhas' },
+              { v: 'unassigned', l: 'Sem agente' },
+            ].map((opt) => (
+              <button key={opt.v} onClick={() => setAssigned(opt.v)}
+                className="text-[11px] px-2 py-1 rounded-md transition-colors flex-1 border"
+                style={{
+                  background: assigned === opt.v ? 'var(--inunda-cyan-faint)' : 'transparent',
+                  color: assigned === opt.v ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+                  borderColor: assigned === opt.v ? 'transparent' : 'var(--inunda-border)',
+                }}>
+                {opt.l}
+              </button>
+            ))}
+          </div>
         </div>
         <ConversationList items={items} activeId={activeId} onSelect={(cid) => navigate(`/app/chat/${cid}`)} />
       </div>
 
       {/* Painel central */}
       {activeId ? (
-        <ChatPanel conversationId={activeId} onBack={() => navigate('/app/chat')} />
+        <>
+          <ChatPanel
+            conversationId={activeId}
+            onBack={() => navigate('/app/chat')}
+            onConvLoaded={setActiveConv}
+            onToggleInfo={() => setInfoOpen((v) => !v)}
+            infoOpen={infoOpen}
+          />
+          {infoOpen && activeConv && (
+            <ContactInfoPanel
+              conv={activeConv}
+              onConvUpdate={(patch) => setActiveConv((p) => ({ ...p, ...patch }))}
+              onClose={() => setInfoOpen(false)}
+            />
+          )}
+        </>
       ) : (
         <div className="hidden md:flex flex-1 flex-col items-center justify-center text-center p-8"
           style={{ background: 'var(--inunda-bg-deep)', color: 'var(--inunda-text-muted)' }}>

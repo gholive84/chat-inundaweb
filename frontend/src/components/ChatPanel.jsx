@@ -43,7 +43,7 @@ function Bubble({ m }) {
   );
 }
 
-export default function ChatPanel({ conversationId, onBack }) {
+export default function ChatPanel({ conversationId, onBack, onConvLoaded, onToggleInfo, infoOpen }) {
   const [conv, setConv] = useState(null);
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
@@ -65,6 +65,7 @@ export default function ChatPanel({ conversationId, onBack }) {
         ]);
         if (cancelled) return;
         setConv(cRes.data);
+        onConvLoaded?.(cRes.data);
         setMessages(mRes.data);
         await api.post(`/conversations/${conversationId}/read`).catch(() => {});
       } catch (err) { console.error(err); }
@@ -123,6 +124,20 @@ export default function ChatPanel({ conversationId, onBack }) {
     } finally { setAiToggling(false); }
   }
 
+  async function resolveConv() {
+    if (!confirm('Marcar conversa como resolvida?')) return;
+    try {
+      await api.post(`/conversations/${conversationId}/status`, { status: 'resolved' });
+      setConv((p) => ({ ...p, status: 'resolved' }));
+    } catch (err) { alert(err.response?.data?.error || 'Erro'); }
+  }
+  async function reopenConv() {
+    try {
+      await api.post(`/conversations/${conversationId}/status`, { status: 'open' });
+      setConv((p) => ({ ...p, status: 'open' }));
+    } catch {}
+  }
+
   if (!conv) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--inunda-text-muted)' }}>
@@ -157,6 +172,19 @@ export default function ChatPanel({ conversationId, onBack }) {
           <p className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{contactName}</p>
           <p className="text-xs font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{conv.phone}</p>
         </div>
+        {conv.status === 'resolved' ? (
+          <button onClick={reopenConv}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-medium"
+            style={{ background: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>
+            ↺ Reabrir
+          </button>
+        ) : (
+          <button onClick={resolveConv}
+            className="px-2.5 py-1.5 rounded-lg text-xs font-medium"
+            style={{ background: 'rgba(34,197,94,0.15)', color: '#22c55e' }}>
+            ✓ Resolver
+          </button>
+        )}
         <button onClick={toggleAI} disabled={aiToggling}
           title={conv.ai_enabled ? (aiPaused ? 'IA pausada (agente ativo)' : 'IA ativa — clique pra desativar') : 'IA desativada — clique pra ativar'}
           className="px-2.5 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1.5 disabled:opacity-50"
@@ -167,6 +195,19 @@ export default function ChatPanel({ conversationId, onBack }) {
           <span>🤖</span>
           <span>{conv.ai_enabled ? (aiPaused ? 'IA pausada' : 'IA ON') : 'IA OFF'}</span>
         </button>
+        {onToggleInfo && (
+          <button onClick={onToggleInfo}
+            title={infoOpen ? 'Esconder info' : 'Mostrar info'}
+            className="p-2 rounded-lg transition-colors"
+            style={{
+              background: infoOpen ? 'var(--inunda-cyan-faint)' : 'transparent',
+              color: infoOpen ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+            }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Messages */}
