@@ -13,9 +13,34 @@ function authorLabel(m) {
   return '';
 }
 
+const TYPE_LABEL = {
+  image: { icon: '📷', label: 'Imagem' },
+  audio: { icon: '🎤', label: 'Áudio' },
+  video: { icon: '🎥', label: 'Vídeo' },
+  document: { icon: '📎', label: 'Documento' },
+  sticker: { icon: '🌟', label: 'Sticker' },
+  location: { icon: '📍', label: 'Localização' },
+};
+
+function MediaPlaceholder({ type, filename, mime, fromMe }) {
+  const t = TYPE_LABEL[type] || { icon: '📄', label: type };
+  return (
+    <div className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${fromMe ? 'bg-black/20' : 'bg-white/[0.04]'}`}>
+      <span className="text-base">{t.icon}</span>
+      <div className="min-w-0">
+        <p className="text-sm font-medium">{t.label}</p>
+        {(filename || mime) && (
+          <p className="text-[10px] opacity-70 truncate">{filename || mime}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function Bubble({ m }) {
   const fromMe = !!m.from_me;
   const isAI = m.author_type === 'ai';
+  const isMedia = m.type && m.type !== 'text';
   return (
     <div className={`flex ${fromMe ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[70%] px-3 py-2 rounded-lg shadow-sm text-sm ${
@@ -29,7 +54,10 @@ function Bubble({ m }) {
         {fromMe && m.author_type === 'agent' && (
           <p className="text-[10px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">{authorLabel(m)}</p>
         )}
-        <p className="whitespace-pre-wrap leading-snug">{m.body}</p>
+        {isMedia && <MediaPlaceholder type={m.type} filename={m.media_filename} mime={m.media_mime} fromMe={fromMe} />}
+        {m.body && (
+          <p className={`whitespace-pre-wrap leading-snug ${isMedia ? 'mt-1.5' : ''}`}>{m.body}</p>
+        )}
         <div className="flex items-center justify-end gap-1 mt-1 -mb-0.5">
           <span className={`text-[10px] ${fromMe ? 'text-white/70' : 'text-white/40'}`}>{formatTime(m.created_at)}</span>
           {fromMe && m.status === 'sent' && <span className="text-[10px] text-white/70">✓</span>}

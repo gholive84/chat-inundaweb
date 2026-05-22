@@ -19,6 +19,7 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
   const [tags, setTags] = useState([]);
   const [convTagIds, setConvTagIds] = useState(new Set());
   const [stages, setStages] = useState([]);
+  const [agents, setAgents] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [newTag, setNewTag] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -35,6 +36,7 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
     api.get(`/notes/conversation/${conv.id}`).then((r) => setNotes(r.data)).catch(() => {});
     api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
     api.get('/crm/stages').then((r) => setStages(r.data)).catch(() => {});
+    api.get('/companies/agents').then((r) => setAgents(r.data)).catch(() => {});
     api.get(`/tags/conversation/${conv.id}`)
       .then((r) => setConvTagIds(new Set((r.data || []).map((t) => t.id))))
       .catch(() => setConvTagIds(new Set()));
@@ -96,6 +98,13 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
     } catch {}
   }
 
+  async function changeAssigned(userId) {
+    try {
+      await api.post(`/conversations/${conv.id}/assign`, { user_id: userId || null });
+      onConvUpdate?.({ assigned_to_user_id: userId || null });
+    } catch {}
+  }
+
   if (!conv) return null;
   const c = contact || {};
   const displayName = c.name || c.push_name || c.phone;
@@ -142,6 +151,16 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
           <p className="text-xs font-mono-inunda mt-0.5" style={{ color: 'var(--inunda-text-faded)' }}>{c.phone}</p>
         </div>
       </div>
+
+      {/* Agente atribuído */}
+      <Section title="Agente atribuído">
+        <select value={conv.assigned_to_user_id || ''} onChange={(e) => changeAssigned(e.target.value || null)}
+          className="w-full bg-white/5 border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:border-cyan-400"
+          style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
+          <option value="">— Sem agente (todos veem) —</option>
+          {agents.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </Section>
 
       {/* CRM stage */}
       {stages.length > 0 && (

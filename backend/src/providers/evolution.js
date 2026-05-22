@@ -78,10 +78,19 @@ async function sendText(instanceName, phone, text) {
   return { id: data?.key?.id || data?.messageId || null, raw: data };
 }
 
+async function fetchProfilePicture(instanceName, phone) {
+  try {
+    const number = String(phone).replace(/\D/g, '');
+    const { data } = await http.post(`/chat/fetchProfilePictureUrl/${instanceName}`, { number });
+    return data?.profilePictureUrl || data?.url || null;
+  } catch { return null; }
+}
+
 module.exports = {
   createInstance,
   getStatus,
   disconnectInstance,
   deleteInstance,
   sendText,
+  fetchProfilePicture,
 };

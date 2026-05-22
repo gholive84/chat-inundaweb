@@ -32,4 +32,16 @@ router.put('/me', authCompany, authRole('owner'), async (req, res) => {
   }
 });
 
+// Lista agentes (atalho — mesmo que /me retorna mas mais leve)
+router.get('/agents', authCompany, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, name, email, role, avatar_url FROM users
+       WHERE company_id=$1 AND active=TRUE ORDER BY name`,
+      [req.user.companyId]
+    );
+    res.json(rows);
+  } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
 module.exports = router;

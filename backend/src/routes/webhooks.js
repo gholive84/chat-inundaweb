@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/database');
 const aiResponder = require('../services/aiResponder');
+const evolution = require('../providers/evolution');
 
 // Webhook do Evolution — endpoint publico, mas valida instance_name + token
 // Evolution chama POST /api/webhooks/evolution/{instance}/{token}
@@ -69,16 +70,31 @@ async function handleIncomingMessage(app, inst, payload) {
   // Encontra ou cria contact
   let contactId;
   const { rows: ex } = await pool.query(
-    'SELECT id FROM contacts WHERE company_id=$1 AND phone=$2',
+    'SELECT id, profile_pic_url FROM contacts WHERE company_id=$1 AND phone=$2',
     [inst.company_id, phone]
   );
-  if (ex.length) contactId = ex[0].id;
-  else {
+  let needsPicFetch = false;
+  if (ex.length) {
+    contactId = ex[0].id;
+    if (!ex[0].profile_pic_url) needsPicFetch = true;
+  } else {
     const { rows: ins } = await pool.query(
       `INSERT INTO contacts (company_id, phone, push_name) VALUES ($1,$2,$3) RETURNING id`,
       [inst.company_id, phone, pushName]
     );
     contactId = ins[0].id;
+    needsPicFetch = true;
+  }
+  // Fetch profile pic async (não bloqueia o webhook)
+  if (needsPicFetch && !fromMe) {
+    setImmediate(async () => {
+      try {
+        const picUrl = await evolution.fetchProfilePicture(inst.instance_name, phone);
+        if (picUrl) {
+          await pool.query('UPDATE contacts SET profile_pic_url=$1 WHERE id=$2', [picUrl, contactId]);
+        }
+      } catch (e) { console.warn('[pic] fetch falhou', e.message); }
+    });
   }
 
   // Encontra ou cria conversation
