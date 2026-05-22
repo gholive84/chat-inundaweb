@@ -1,0 +1,47 @@
+# Stack do Evolution API — sobe junto na rede network_public
+# Usa Postgres já existente (DB: evolution) e Redis já existente
+version: '3.8'
+
+services:
+  evolution_api:
+    image: evoapicloud/evolution-api:v2.3.7
+    networks: [network_public]
+    environment:
+      SERVER_TYPE: http
+      SERVER_PORT: '8080'
+      SERVER_URL: http://evolution_api:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://postgres:${DB_PASS}@postgres_postgres:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://redis_redis:6379/2
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_LOCAL_ENABLED: 'false'
+      CONFIG_SESSION_PHONE_VERSION: '2.3000.1023249347'
+      DEL_INSTANCE: 'false'
+      LANGUAGE: pt-BR
+      WEBHOOK_GLOBAL_ENABLED: 'false'
+    volumes:
+      - evolution_instances:/evolution/instances
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.evolution.rule=Host(`evolution.inundaweb.com.br`)"
+        - "traefik.http.routers.evolution.entrypoints=websecure"
+        - "traefik.http.routers.evolution.tls.certresolver=letsencrypt"
+        - "traefik.http.services.evolution.loadbalancer.server.port=8080"
+
+volumes:
+  evolution_instances:
+    external: false
+
+networks:
+  network_public:
+    external: true

@@ -1,0 +1,12 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json* ./
+COPY frontend/package.json ./frontend/
+RUN npm install --workspaces --include-workspace-root || npm install
+COPY frontend ./frontend
+RUN cd frontend && npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/frontend/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

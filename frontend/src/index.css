@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Tema Inunda — variaveis CSS pra light/dark */
+:root, .theme-inunda[data-mode="dark"] {
+  --inunda-bg-deep:      #0A1628;
+  --inunda-bg-surface:   #0F1E33;
+  --inunda-bg-elevated:  #142840;
+  --inunda-border:       rgba(255, 255, 255, 0.08);
+  --inunda-text:         #E6F2FF;
+  --inunda-text-muted:   #8FA5BD;
+  --inunda-text-faded:   #5A7290;
+  --inunda-cyan:         #00D4E8;
+  --inunda-cyan-faint:   rgba(0, 212, 232, 0.12);
+}
+.theme-inunda[data-mode="light"] {
+  --inunda-bg-deep:      #FFFFFF;
+  --inunda-bg-surface:   #F2F5F9;
+  --inunda-bg-elevated:  #E7EDF5;
+  --inunda-border:       rgba(10, 22, 40, 0.1);
+  --inunda-text:         #0A1628;
+  --inunda-text-muted:   #4A5C72;
+  --inunda-text-faded:   #8FA5BD;
+  --inunda-cyan:         #008A99;
+  --inunda-cyan-faint:   rgba(0, 138, 153, 0.1);
+}
+
+html, body, #root { height: 100%; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--inunda-bg-deep);
+  color: var(--inunda-text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-mono-inunda { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+
+/* Helpers reutilizaveis */
+.inunda-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--inunda-text-faded);
+}
+.inunda-tag {
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: var(--inunda-cyan-faint);
+  color: var(--inunda-cyan);
+}
+
+/* Scrollbar discreta */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--inunda-border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--inunda-text-faded); }

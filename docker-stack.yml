@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  chat_app:
+    image: chat-inunda-backend:latest
+    networks: [network_public]
+    environment:
+      NODE_ENV: production
+      PORT: '3001'
+      DB_HOST: postgres_postgres
+      DB_PORT: '5432'
+      DB_NAME: chat_inunda
+      DB_USER: postgres
+      DB_PASS: ${DB_PASS}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_EXPIRES_IN: 30d
+      REDIS_HOST: redis_redis
+      REDIS_PORT: '6379'
+      FRONTEND_URL: https://chat.inundaweb.com.br
+      EVOLUTION_BASE_URL: http://evolution_api:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
+      PUBLIC_WEBHOOK_URL: https://chat.inundaweb.com.br/api/webhooks/evolution
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.chat-api.rule=Host(`chat.inundaweb.com.br`) && (PathPrefix(`/api`) || PathPrefix(`/socket.io`))"
+        - "traefik.http.routers.chat-api.entrypoints=websecure"
+        - "traefik.http.routers.chat-api.tls.certresolver=letsencrypt"
+        - "traefik.http.services.chat-api.loadbalancer.server.port=3001"
+
+  chat_frontend:
+    image: chat-inunda-frontend:latest
+    networks: [network_public]
+    deploy:
+      replicas: 1
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.chat-front.rule=Host(`chat.inundaweb.com.br`)"
+        - "traefik.http.routers.chat-front.entrypoints=websecure"
+        - "traefik.http.routers.chat-front.tls.certresolver=letsencrypt"
+        - "traefik.http.services.chat-front.loadbalancer.server.port=80"
+        - "traefik.http.routers.chat-front.priority=1"
+
+networks:
+  network_public:
+    external: true
