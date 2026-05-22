@@ -12,7 +12,7 @@ services:
       SERVER_URL: http://evolution_api:8080
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://postgres:${DB_PASS}@postgres_postgres:5432/evolution
+      DATABASE_CONNECTION_URI: postgresql://${CHAT_DB_USER}:${CHAT_DB_PASS}@postgres_postgres:5432/evolution
       DATABASE_CONNECTION_CLIENT_NAME: evolution_exchange
       DATABASE_SAVE_DATA_INSTANCE: 'true'
       DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
@@ -31,12 +31,14 @@ services:
       - evolution_instances:/evolution/instances
     deploy:
       replicas: 1
-      labels:
-        - "traefik.enable=true"
-        - "traefik.http.routers.evolution.rule=Host(`evolution.inundaweb.com.br`)"
-        - "traefik.http.routers.evolution.entrypoints=websecure"
-        - "traefik.http.routers.evolution.tls.certresolver=letsencrypt"
-        - "traefik.http.services.evolution.loadbalancer.server.port=8080"
+      # Sem labels Traefik — Evolution fica acessivel apenas dentro da rede Docker
+      # (chat_app fala com http://evolution_api:8080 direto).
+      # Se um dia quiser expor o Evolution Manager UI externamente, adicione aqui:
+      #   - "traefik.enable=true"
+      #   - "traefik.http.routers.evolution.rule=Host(`evolution.inundaweb.com.br`)"
+      #   - "traefik.http.routers.evolution.entrypoints=websecure"
+      #   - "traefik.http.routers.evolution.tls.certresolver=letsencrypt"
+      #   - "traefik.http.services.evolution.loadbalancer.server.port=8080"
 
 volumes:
   evolution_instances:
