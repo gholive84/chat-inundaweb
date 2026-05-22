@@ -173,7 +173,10 @@ async function runMigrations() {
     )
   `);
   await safe(`CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, created_at)`);
-  await safe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_provider ON messages(provider_msg_id) WHERE provider_msg_id IS NOT NULL`);
+  // Postgres trata NULLs como distintos em UNIQUE; ON CONFLICT precisa de constraint nao-partial
+  await safe(`ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_provider_msg_id_key`);
+  await safe(`DROP INDEX IF EXISTS idx_msg_provider`);
+  await safe(`ALTER TABLE messages ADD CONSTRAINT messages_provider_msg_id_key UNIQUE (provider_msg_id)`);
 
   // ── Notes (notas internas por conversa) ──────────────────────────────
   await safe(`
