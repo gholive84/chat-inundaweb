@@ -52,13 +52,14 @@ router.post('/:conversationId', authCompany, async (req, res) => {
     `, [c.id, req.user.id, type, body]);
     const msgId = ins[0].id;
 
-    // Pausa IA (agente está atendendo)
+    // Pausa IA + auto-atribui agente se ainda nao tinha
     await pool.query(
       `UPDATE conversations SET ai_paused_until = NOW() + INTERVAL '10 minutes',
                                 last_message_at = NOW(),
-                                last_message_preview = $1
-       WHERE id=$2`,
-      [body.slice(0, 200), c.id]
+                                last_message_preview = $1,
+                                assigned_to_user_id = COALESCE(assigned_to_user_id, $2)
+       WHERE id=$3`,
+      [body.slice(0, 200), req.user.id, c.id]
     );
 
     // Envia via provider

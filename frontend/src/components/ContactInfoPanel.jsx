@@ -35,8 +35,9 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
     api.get(`/notes/conversation/${conv.id}`).then((r) => setNotes(r.data)).catch(() => {});
     api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
     api.get('/crm/stages').then((r) => setStages(r.data)).catch(() => {});
-    // TODO: pegar tags da conversa — backend ainda nao expoe (placeholder)
-    setConvTagIds(new Set());
+    api.get(`/tags/conversation/${conv.id}`)
+      .then((r) => setConvTagIds(new Set((r.data || []).map((t) => t.id))))
+      .catch(() => setConvTagIds(new Set()));
   }, [conv?.id, conv?.contact_id]);
 
   async function saveContact(patch) {

@@ -30,6 +30,19 @@ router.delete('/:id', authCompany, async (req, res) => {
   res.json({ success: true });
 });
 
+// Tags de uma conversa
+router.get('/conversation/:convId', authCompany, async (req, res) => {
+  const { rows } = await pool.query(`
+    SELECT t.id, t.label, t.color
+    FROM tags t
+    JOIN conversation_tags ct ON ct.tag_id = t.id
+    JOIN conversations c ON c.id = ct.conversation_id
+    WHERE ct.conversation_id = $1 AND c.company_id = $2
+    ORDER BY t.label
+  `, [req.params.convId, req.user.companyId]);
+  res.json(rows);
+});
+
 router.post('/conversation/:convId/:tagId', authCompany, async (req, res) => {
   // valida ownership
   const { rows } = await pool.query(`

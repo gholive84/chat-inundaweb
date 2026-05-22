@@ -4,6 +4,7 @@ import api from '../services/api';
 import useSocketStore from '../store/socketStore';
 import ChatPanel from '../components/ChatPanel';
 import ContactInfoPanel from '../components/ContactInfoPanel';
+import { relativeTime } from '../utils/relativeTime';
 
 function ConversationList({ items, activeId, onSelect }) {
   return (
@@ -31,16 +32,21 @@ function ConversationList({ items, activeId, onSelect }) {
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{name}</p>
+                <span className="text-[10px] flex-shrink-0" style={{ color: c.unread_count > 0 ? 'var(--inunda-cyan)' : 'var(--inunda-text-faded)' }}>
+                  {relativeTime(c.last_message_at)}
+                </span>
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-0.5">
+                <p className="text-xs truncate flex-1" style={{ color: 'var(--inunda-text-muted)' }}>
+                  {c.last_message_preview || '—'}
+                </p>
                 {c.unread_count > 0 && (
-                  <span className="text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center"
+                  <span className="text-[10px] font-bold rounded-full px-1.5 min-w-[18px] h-[18px] flex items-center justify-center flex-shrink-0"
                     style={{ background: 'var(--inunda-cyan)', color: 'var(--inunda-bg-deep)' }}>
                     {c.unread_count}
                   </span>
                 )}
               </div>
-              <p className="text-xs truncate mt-0.5" style={{ color: 'var(--inunda-text-muted)' }}>
-                {c.last_message_preview || '—'}
-              </p>
             </div>
           </button>
         );
