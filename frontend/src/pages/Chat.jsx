@@ -81,13 +81,18 @@ export default function Chat() {
   const [assigned, setAssigned] = useState('all');
   const [instanceFilter, setInstanceFilter] = useState('all');
   const [instances, setInstances] = useState([]);
+  const [tagFilter, setTagFilter] = useState('all');
+  const [tags, setTags] = useState([]);
   const [infoOpen, setInfoOpen] = useState(() => {
     try { return localStorage.getItem('chat_info_panel_open') !== 'false'; } catch { return true; }
   });
   const socket = useSocketStore((s) => s.socket) || useSocketStore.getState().connect();
   const activeId = parseInt(id);
 
-  useEffect(() => { api.get('/instances').then((r) => setInstances(r.data)).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get('/instances').then((r) => setInstances(r.data)).catch(() => {});
+    api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
+  }, []);
 
   function load() {
     const params = new URLSearchParams();
@@ -95,6 +100,7 @@ export default function Chat() {
     if (assigned !== 'all') params.set('assigned', assigned);
     if (search.trim()) params.set('search', search.trim());
     if (instanceFilter !== 'all') params.set('instance_id', instanceFilter);
+    if (tagFilter !== 'all') params.set('tag_id', tagFilter);
     api.get(`/conversations?${params}`).then((r) => setItems(r.data)).catch(() => {});
   }
   // debounce search
@@ -102,7 +108,7 @@ export default function Chat() {
     const t = setTimeout(load, 300);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, assigned, search, instanceFilter]);
+  }, [status, assigned, search, instanceFilter, tagFilter]);
 
   useEffect(() => { try { localStorage.setItem('chat_info_panel_open', String(infoOpen)); } catch {} }, [infoOpen]);
 
@@ -190,6 +196,16 @@ export default function Chat() {
               <option value="all">📦 Todas as caixas</option>
               {instances.map((i) => (
                 <option key={i.id} value={i.id}>📦 {i.display_name || i.instance_name}</option>
+              ))}
+            </select>
+          )}
+          {tags.length > 0 && (
+            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}
+              className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
+              <option value="all">🏷 Todas as tags</option>
+              {tags.map((t) => (
+                <option key={t.id} value={t.id}>🏷 {t.label}</option>
               ))}
             </select>
           )}

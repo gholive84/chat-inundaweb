@@ -61,11 +61,23 @@ export default function Crm() {
     } catch { loadAll(); }
   }
 
+  const [editingStage, setEditingStage] = useState(null);
+
   async function createStage() {
     if (!newStage.id || !newStage.label) return;
     try {
       await api.post('/crm/stages', { ...newStage, position: stages.length });
       setNewStage({ id: '', label: '', color: 'blue' });
+      const r = await api.get('/crm/stages'); setStages(r.data);
+    } catch (err) { alert(err.response?.data?.error || 'Erro'); }
+  }
+  async function saveStage() {
+    if (!editingStage?.label) return;
+    try {
+      await api.put(`/crm/stages/${editingStage.id}`, {
+        label: editingStage.label, color: editingStage.color, position: editingStage.position,
+      });
+      setEditingStage(null);
       const r = await api.get('/crm/stages'); setStages(r.data);
     } catch (err) { alert(err.response?.data?.error || 'Erro'); }
   }
@@ -129,13 +141,35 @@ export default function Crm() {
             </button>
           </div>
           <div className="mt-3 flex flex-wrap gap-1.5">
-            {stages.map((s) => (
-              <span key={s.id} className="inline-flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-full border"
-                style={{ borderColor: STAGE_COLORS[s.color] || s.color, color: STAGE_COLORS[s.color] || s.color }}>
-                {s.label}
-                <button onClick={() => deleteStage(s.id)} className="opacity-60 hover:opacity-100">×</button>
-              </span>
-            ))}
+            {stages.map((s) => {
+              const isEditing = editingStage?.id === s.id;
+              return (
+                <span key={s.id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border"
+                  style={{ borderColor: STAGE_COLORS[s.color] || s.color, color: STAGE_COLORS[s.color] || s.color }}>
+                  {isEditing ? (
+                    <>
+                      <input autoFocus value={editingStage.label}
+                        onChange={(e) => setEditingStage({ ...editingStage, label: e.target.value })}
+                        onKeyDown={(e) => { if (e.key === 'Enter') saveStage(); if (e.key === 'Escape') setEditingStage(null); }}
+                        className="bg-transparent border-0 outline-0 w-28 text-xs"
+                        style={{ color: 'var(--inunda-text)' }} />
+                      <select value={editingStage.color} onChange={(e) => setEditingStage({ ...editingStage, color: e.target.value })}
+                        className="bg-transparent border-0 text-[10px]" style={{ color: 'var(--inunda-text)' }}>
+                        {Object.keys(STAGE_COLORS).map((c) => <option key={c} value={c}>{c}</option>)}
+                      </select>
+                      <button onClick={saveStage} className="text-green-400" title="Salvar">✓</button>
+                      <button onClick={() => setEditingStage(null)} className="opacity-60" title="Cancelar">×</button>
+                    </>
+                  ) : (
+                    <>
+                      {s.label}
+                      <button onClick={() => setEditingStage({ ...s })} className="opacity-60 hover:opacity-100" title="Editar">✏️</button>
+                      <button onClick={() => deleteStage(s.id)} className="opacity-60 hover:opacity-100 hover:text-red-400" title="Excluir">×</button>
+                    </>
+                  )}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}

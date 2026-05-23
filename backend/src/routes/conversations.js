@@ -6,7 +6,7 @@ const { authCompany } = require('../middleware/auth');
 // Lista conversas (com filtros: status, assigned, search)
 router.get('/', authCompany, async (req, res) => {
   try {
-    const { status = 'open', assigned, search, instance_id, limit = 100 } = req.query;
+    const { status = 'open', assigned, search, instance_id, tag_id, limit = 100 } = req.query;
     const where = ['c.company_id = $1'];
     const params = [req.user.companyId];
 
@@ -16,6 +16,10 @@ router.get('/', authCompany, async (req, res) => {
     else if (assigned && assigned !== 'all') { params.push(assigned); where.push(`c.assigned_to_user_id = $${params.length}`); }
     if (search) { params.push(`%${search}%`); where.push(`(ct.name ILIKE $${params.length} OR ct.phone ILIKE $${params.length} OR c.last_message_preview ILIKE $${params.length})`); }
     if (instance_id) { params.push(parseInt(instance_id)); where.push(`c.instance_id = $${params.length}`); }
+    if (tag_id) {
+      params.push(parseInt(tag_id));
+      where.push(`EXISTS (SELECT 1 FROM conversation_tags ct2 WHERE ct2.conversation_id = c.id AND ct2.tag_id = $${params.length})`);
+    }
 
     // Se nao for owner: restringe pelas instancias atribuidas (se houver atribuicao).
     // Logica: se user tem alguma entrada em instance_agents, so ve essas instancias.
