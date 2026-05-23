@@ -18,6 +18,65 @@ router.get('/config', authCompany, async (req, res) => {
   });
 });
 
+// Lista modelos disponiveis pro provider (precisa de api_key valida)
+router.post('/models', authCompany, async (req, res) => {
+  try {
+    const axios = require('axios');
+    const { provider, api_key } = req.body;
+    let key = api_key;
+    // Se nao mandou key, tenta usar a salva
+    if (!key) {
+      const { rows } = await pool.query(
+        'SELECT api_key, provider FROM ai_configs WHERE company_id=$1',
+        [req.user.companyId]
+      );
+      key = rows[0]?.api_key;
+    }
+    if (!key) return res.status(400).json({ error: 'API key necessária' });
+
+    let models = [];
+    if (provider === 'openai') {
+      const { data } = await axios.get('https://api.openai.com/v1/models', {
+        headers: { Authorization: `Bearer ${key}` },
+        timeout: 15000,
+      });
+      // Filtra so modelos de chat (gpt-*, o1-*, o3-*, chatgpt-*)
+      models = (data?.data || [])
+        .filter((m) => /^(gpt-|o1|o3|o4|chatgpt-)/.test(m.id))
+        .filter((m) => !/-instruct|audio|realtime|tts|whisper|transcribe|embedding|moderation|vision-preview|search|computer/.test(m.id))
+        .map((m) => ({ id: m.id, name: m.id }))
+        .sort((a, b) => b.id.localeCompare(a.id));
+    } else if (provider === 'anthropic') {
+      try {
+        const { data } = await axios.get('https://api.anthropic.com/v1/models', {
+          headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01' },
+          timeout: 15000,
+        });
+        models = (data?.data || []).map((m) => ({ id: m.id, name: m.display_name || m.id }));
+      } catch {
+        // Fallback: lista hardcoded das principais
+        models = [
+          { id: 'claude-opus-4-1-20250805',    name: 'Claude Opus 4.1' },
+          { id: 'claude-opus-4-20250514',      name: 'Claude Opus 4' },
+          { id: 'claude-sonnet-4-20250514',    name: 'Claude Sonnet 4' },
+          { id: 'claude-3-7-sonnet-20250219',  name: 'Claude 3.7 Sonnet' },
+          { id: 'claude-3-5-sonnet-20241022',  name: 'Claude 3.5 Sonnet (oct)' },
+          { id: 'claude-3-5-haiku-20241022',   name: 'Claude 3.5 Haiku' },
+          { id: 'claude-3-opus-20240229',      name: 'Claude 3 Opus' },
+          { id: 'claude-3-haiku-20240307',     name: 'Claude 3 Haiku' },
+        ];
+      }
+    } else {
+      return res.status(400).json({ error: 'Provider não suportado' });
+    }
+    res.json(models);
+  } catch (err) {
+    console.error('POST /ai/models', err.response?.data || err.message);
+    const msg = err.response?.status === 401 ? 'API key inválida' : (err.message || 'Erro ao listar modelos');
+    res.status(400).json({ error: msg });
+  }
+});
+
 router.put('/config', authCompany, authRole('owner'), async (req, res) => {
   try {
     const { provider, api_key, model, system_prompt, pause_seconds, enabled, max_tokens, temperature, default_conversation_ai } = req.body;

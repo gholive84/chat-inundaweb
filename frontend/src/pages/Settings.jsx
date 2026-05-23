@@ -8,7 +8,6 @@ const TABS = [
   { id: 'ai',         label: 'IA',           icon: '🤖' },
   { id: 'knowledge',  label: 'Conhecimento', icon: '📚' },
   { id: 'agents',     label: 'Atendentes',   icon: '👥' },
-  { id: 'storage',    label: 'Armazenamento',icon: '🗄' },
 ];
 
 function Notice({ type = 'info', children }) {
@@ -212,12 +211,45 @@ function TabAI() {
   const [config, setConfig] = useState(null);
   const [saving, setSaving] = useState(false);
   const [ok, setOk] = useState(''); const [err, setErr] = useState('');
+  const [models, setModels] = useState([]);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsErr, setModelsErr] = useState('');
   useEffect(() => { api.get('/ai/config').then((r) => setConfig(r.data)).catch(() => {}); }, []);
+
+  // Carrega modelos: usa key salva (has_key) OU key digitada agora
+  async function loadModels(provider, apiKey) {
+    if (provider === 'none' || !provider) { setModels([]); setModelsErr(''); return; }
+    setLoadingModels(true); setModelsErr('');
+    try {
+      const { data } = await api.post('/ai/models', { provider, api_key: apiKey || undefined });
+      setModels(data || []);
+    } catch (e) {
+      setModelsErr(e.response?.data?.error || 'Erro');
+      setModels([]);
+    } finally { setLoadingModels(false); }
+  }
+
+  // Auto-load quando config tem key salva + provider
+  useEffect(() => {
+    if (config?.has_key && config?.provider && config.provider !== 'none' && models.length === 0) {
+      loadModels(config.provider);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config?.has_key, config?.provider]);
+
   if (!config) return <p className="text-sm text-white/50">Carregando…</p>;
   const set = (p) => setConfig({ ...config, ...p });
   async function save() {
     setErr(''); setOk(''); setSaving(true);
-    try { await api.put('/ai/config', config); setOk('Salvo'); setTimeout(() => setOk(''), 2000); }
+    try {
+      await api.put('/ai/config', config);
+      // Recarrega config pra refletir has_key
+      const { data } = await api.get('/ai/config');
+      setConfig(data);
+      setOk('Salvo'); setTimeout(() => setOk(''), 2000);
+      // Tenta listar modelos se ainda nao tem
+      if (data.provider !== 'none') loadModels(data.provider);
+    }
     catch (e) { setErr(e.response?.data?.error || 'Erro'); }
     finally { setSaving(false); }
   }
@@ -246,14 +278,38 @@ function TabAI() {
         </select>
       </Field>
       <Field label={`API Key${config.has_key ? ' (já configurada — deixe vazio pra manter)' : ''}`}>
-        <input type="password" placeholder="sk-..." value={config.api_key || ''}
-          onChange={(e) => set({ api_key: e.target.value })}
-          className={`${inputCls} font-mono-inunda`} />
+        <div className="flex gap-2">
+          <input type="password" placeholder="sk-..." value={config.api_key || ''}
+            onChange={(e) => set({ api_key: e.target.value })}
+            className={`${inputCls} font-mono-inunda flex-1`} />
+          <button type="button"
+            onClick={() => loadModels(config.provider, config.api_key)}
+            disabled={loadingModels || config.provider === 'none' || (!config.api_key && !config.has_key)}
+            title="Buscar modelos disponíveis"
+            className="text-xs px-3 py-2 rounded-lg border whitespace-nowrap disabled:opacity-40"
+            style={{ borderColor: 'var(--inunda-border)', color: 'var(--inunda-cyan)' }}>
+            {loadingModels ? '⏳' : '🔄 Listar modelos'}
+          </button>
+        </div>
       </Field>
       <Field label="Modelo">
-        <input placeholder={config.provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini'}
-          value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
-          className={`${inputCls} font-mono-inunda`} />
+        {models.length > 0 ? (
+          <select value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
+            className={`${inputCls} font-mono-inunda`}>
+            <option value="">— Selecione —</option>
+            {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+        ) : (
+          <input placeholder={config.provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini'}
+            value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
+            className={`${inputCls} font-mono-inunda`} />
+        )}
+        {modelsErr && <p className="text-[11px] mt-1" style={{ color: '#fca5a5' }}>{modelsErr}</p>}
+        {models.length > 0 && (
+          <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+            {models.length} modelos carregados
+          </p>
+        )}
       </Field>
       <Field label="System prompt">
         <textarea rows={5} placeholder="Voce e atendente da..."
@@ -582,7 +638,6 @@ export default function Settings() {
         {tab === 'ai'        && <TabAI />}
         {tab === 'knowledge' && <TabKnowledge />}
         {tab === 'agents'    && <TabAgents />}
-        {tab === 'storage'   && <TabStorage />}
       </div>
     </div>
   );

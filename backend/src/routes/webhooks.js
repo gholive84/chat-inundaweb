@@ -164,7 +164,7 @@ async function handleIncomingMessage(app, inst, payload) {
 
     // Mídia: Evolution v2 ja manda base64 inline (config base64:true no webhook).
     // Pega direto do payload — fallback pra getBase64FromMediaMessage se nao vier.
-    if (isMedia && await storage.hasS3(inst.company_id).catch(() => false)) {
+    if (isMedia && await storage.hasS3().catch(() => false)) {
       setImmediate(async () => {
         try {
           // Evolution coloca em data.message.base64 (m.base64)

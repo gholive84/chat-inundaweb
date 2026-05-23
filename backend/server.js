@@ -302,7 +302,7 @@ async function runMigrations() {
     )
   `);
 
-  // ── Storage config (S3, local, etc) ──────────────────────────────────
+  // ── Storage config (S3, local, etc) — DEPRECATED, agora em platform_settings ─
   await safe(`
     CREATE TABLE IF NOT EXISTS storage_configs (
       company_id   INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
@@ -315,6 +315,24 @@ async function runMigrations() {
       public_url   TEXT,
       updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
+  `);
+
+  // ── Platform settings (global, controlado pelo super admin) ──────────
+  await safe(`
+    CREATE TABLE IF NOT EXISTS platform_settings (
+      key       VARCHAR(50) PRIMARY KEY,
+      value     JSONB NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  // Migra storage_configs existente (qualquer empresa) pra platform_settings.storage
+  // (one-time, se ainda nao existe a chave global)
+  await safe(`
+    INSERT INTO platform_settings (key, value)
+    SELECT 'storage', row_to_json(s)::jsonb
+    FROM storage_configs s
+    WHERE NOT EXISTS (SELECT 1 FROM platform_settings WHERE key = 'storage')
+    LIMIT 1
   `);
 
   // ── Scheduled messages ───────────────────────────────────────────────

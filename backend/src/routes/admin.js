@@ -119,6 +119,52 @@ router.get('/instances', async (req, res) => {
   }
 });
 
+// ── PLATFORM STORAGE (S3 global) ─────────────────────────────────────
+router.get('/storage', async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT value FROM platform_settings WHERE key='storage'`
+    );
+    const v = rows[0]?.value || { provider: 'local' };
+    res.json({
+      provider: v.provider || 'local',
+      endpoint: v.endpoint || '',
+      region: v.region || '',
+      bucket: v.bucket || '',
+      public_url: v.public_url || '',
+      has_key: !!v.access_key,
+      has_secret: !!v.secret_key,
+    });
+  } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
+router.put('/storage', async (req, res) => {
+  try {
+    const { provider, endpoint, region, bucket, access_key, secret_key, public_url } = req.body;
+    if (!['local', 's3'].includes(provider || 'local')) return res.status(400).json({ error: 'Provider inválido' });
+    // Mantem keys existentes se vier vazias
+    const { rows: cur } = await pool.query(`SELECT value FROM platform_settings WHERE key='storage'`);
+    const old = cur[0]?.value || {};
+    const value = {
+      provider: provider || 'local',
+      endpoint: endpoint || null,
+      region: region || null,
+      bucket: bucket || null,
+      access_key: access_key || old.access_key || null,
+      secret_key: secret_key || old.secret_key || null,
+      public_url: public_url || null,
+    };
+    await pool.query(`
+      INSERT INTO platform_settings (key, value, updated_at)
+      VALUES ('storage', $1, NOW())
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+    `, [JSON.stringify(value)]);
+    // Invalida cache do storage service
+    try { require('../services/storage').invalidateCache(); } catch {}
+    res.json({ success: true });
+  } catch (err) { console.error('PUT /admin/storage', err); res.status(500).json({ error: 'Erro interno' }); }
+});
+
 // ── MEMBERSHIPS ──────────────────────────────────────────────────────
 router.post('/users/:userId/memberships', async (req, res) => {
   try {

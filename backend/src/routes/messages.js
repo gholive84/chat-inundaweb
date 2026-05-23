@@ -137,7 +137,7 @@ router.post('/:conversationId/media', authCompany, upload.single('file'), async 
     let mediaUrl = null;
     let mediaPayload; // o que mandar pro Evolution: 'url' string ou base64 string
     let useUrl = false;
-    if (await storage.hasS3(req.user.companyId)) {
+    if (await storage.hasS3()) {
       try {
         const up = await storage.uploadBuffer({
           companyId: req.user.companyId,

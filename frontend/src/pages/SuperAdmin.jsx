@@ -239,6 +239,92 @@ function UsersTab() {
   );
 }
 
+// ─── Tab Storage (platform-wide S3) ────────────────────────────────
+function StorageTab() {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [ok, setOk] = useState(''); const [err, setErr] = useState('');
+  useEffect(() => { api.get('/admin/storage').then((r) => setCfg(r.data)).catch(() => {}); }, []);
+  if (!cfg) return <p className="text-sm" style={{ color: 'var(--inunda-text-muted)' }}>Carregando…</p>;
+  const set = (p) => setCfg({ ...cfg, ...p });
+  async function save() {
+    setErr(''); setOk(''); setSaving(true);
+    try { await api.put('/admin/storage', cfg); setOk('Salvo — invalidado cache'); setTimeout(() => setOk(''), 2500); }
+    catch (e) { setErr(e.response?.data?.error || 'Erro'); } finally { setSaving(false); }
+  }
+  const inputCls = "w-full bg-white/5 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-400";
+  return (
+    <div className="max-w-2xl space-y-4">
+      <div className="px-3 py-2 rounded-lg text-xs border" style={{ background: 'rgba(168,85,247,0.08)', color: '#c084fc', borderColor: 'rgba(168,85,247,0.3)' }}>
+        ⚠ Esta config é <strong>global</strong> — todas as empresas da plataforma usam o mesmo bucket.
+        Arquivos ficam isolados por <code className="font-mono-inunda">{`chat/{companyId}/...`}</code> dentro do bucket.
+      </div>
+      {err && <div className="px-3 py-2 rounded-lg text-xs border" style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>{err}</div>}
+      {ok && <div className="px-3 py-2 rounded-lg text-xs border" style={{ color: '#86efac', borderColor: 'rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.08)' }}>{ok}</div>}
+
+      <div>
+        <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>Provider</label>
+        <select value={cfg.provider} onChange={(e) => set({ provider: e.target.value })}
+          className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
+          <option value="local">Local (sem persistência — só dev)</option>
+          <option value="s3">S3 (AWS / MinIO / R2 / B2)</option>
+        </select>
+      </div>
+      {cfg.provider === 's3' && (
+        <>
+          <div>
+            <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>
+              Endpoint (opcional — pra MinIO/R2/B2)
+            </label>
+            <input value={cfg.endpoint || ''} onChange={(e) => set({ endpoint: e.target.value })}
+              placeholder="https://s3.us-east-1.amazonaws.com (deixa vazio pra AWS default)"
+              className={`${inputCls} font-mono-inunda`}
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>Region</label>
+              <input value={cfg.region || ''} onChange={(e) => set({ region: e.target.value })} placeholder="us-east-1"
+                className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+            </div>
+            <div>
+              <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>Bucket</label>
+              <input value={cfg.bucket || ''} onChange={(e) => set({ bucket: e.target.value })} placeholder="chat-inunda"
+                className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+            </div>
+          </div>
+          <div>
+            <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>
+              Access Key{cfg.has_key ? ' (já configurada — vazio mantém)' : ''}
+            </label>
+            <input type="password" value={cfg.access_key || ''} onChange={(e) => set({ access_key: e.target.value })}
+              placeholder="AKIA..."
+              className={`${inputCls} font-mono-inunda`}
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>
+              Secret Key{cfg.has_secret ? ' (já configurada — vazio mantém)' : ''}
+            </label>
+            <input type="password" value={cfg.secret_key || ''} onChange={(e) => set({ secret_key: e.target.value })}
+              className={`${inputCls} font-mono-inunda`}
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>URL pública (opcional — CDN)</label>
+            <input value={cfg.public_url || ''} onChange={(e) => set({ public_url: e.target.value })}
+              placeholder="https://cdn.exemplo.com"
+              className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+          </div>
+        </>
+      )}
+      <button onClick={save} disabled={saving} className="btn-primary px-4 py-2 rounded-lg text-sm">
+        {saving ? 'Salvando…' : 'Salvar configuração'}
+      </button>
+    </div>
+  );
+}
+
 const PROVIDER_LABEL = {
   evolution: { label: 'Evolution', color: '#22c55e' },
   zapi: { label: 'Z-API', color: '#8b5cf6' },
@@ -341,11 +427,13 @@ export default function SuperAdmin() {
           <Tab active={tab === 'companies'} onClick={() => setTab('companies')}>🏢 Empresas</Tab>
           <Tab active={tab === 'users'} onClick={() => setTab('users')}>👥 Usuários</Tab>
           <Tab active={tab === 'instances'} onClick={() => setTab('instances')}>📦 Instâncias WhatsApp</Tab>
+          <Tab active={tab === 'storage'} onClick={() => setTab('storage')}>🗄 Armazenamento</Tab>
         </div>
 
         {tab === 'companies' && <CompaniesTab />}
         {tab === 'users' && <UsersTab />}
         {tab === 'instances' && <InstancesTab />}
+        {tab === 'storage' && <StorageTab />}
       </div>
     </div>
   );

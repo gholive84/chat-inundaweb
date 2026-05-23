@@ -3,21 +3,31 @@ const crypto = require('crypto');
 const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { pool } = require('../config/database');
 
-// Cache de clients por companyId (evita re-criar a cada upload)
-const clientCache = new Map();
+// Cache do client S3 (compartilhado entre companies — storage e global)
+let _client = null;
+let _cacheKey = null;
 
-async function getConfig(companyId) {
+async function getConfig() {
+  // Le do platform_settings (chave global gerenciada pelo super admin)
   const { rows } = await pool.query(
-    `SELECT provider, endpoint, region, bucket, access_key, secret_key, public_url
-     FROM storage_configs WHERE company_id=$1`,
-    [companyId]
+    `SELECT value FROM platform_settings WHERE key='storage'`
   );
-  return rows[0] || { provider: 'local' };
+  if (!rows.length) return { provider: 'local' };
+  const v = rows[0].value || {};
+  return {
+    provider: v.provider || 'local',
+    endpoint: v.endpoint || null,
+    region: v.region || null,
+    bucket: v.bucket || null,
+    access_key: v.access_key || null,
+    secret_key: v.secret_key || null,
+    public_url: v.public_url || null,
+  };
 }
 
 function getClient(cfg) {
   const key = `${cfg.endpoint || ''}|${cfg.region}|${cfg.access_key}`;
-  if (clientCache.has(key)) return clientCache.get(key);
+  if (_client && _cacheKey === key) return _client;
   const opts = {
     region: cfg.region || 'us-east-1',
     credentials: {
@@ -27,11 +37,11 @@ function getClient(cfg) {
   };
   if (cfg.endpoint) {
     opts.endpoint = cfg.endpoint;
-    opts.forcePathStyle = true; // pra MinIO/R2/B2
+    opts.forcePathStyle = true;
   }
-  const client = new S3Client(opts);
-  clientCache.set(key, client);
-  return client;
+  _client = new S3Client(opts);
+  _cacheKey = key;
+  return _client;
 }
 
 function publicUrl(cfg, key) {
@@ -49,15 +59,18 @@ function safeFilename(name) {
 
 /**
  * Faz upload e retorna a URL publica.
- * Throws se S3 nao configurado/falha.
+ * Bucket e platform-wide (uma config global). Key sempre prefixada pelo
+ * companyId pra isolar arquivos entre empresas.
  */
 async function uploadBuffer({ companyId, buffer, mimetype, filename, folder = 'chat' }) {
-  const cfg = await getConfig(companyId);
-  if (cfg.provider !== 's3') throw new Error('S3 nao configurado');
+  const cfg = await getConfig();
+  if (cfg.provider !== 's3') throw new Error('S3 nao configurado (super admin)');
   if (!cfg.bucket || !cfg.access_key || !cfg.secret_key) throw new Error('S3 incompleto (bucket/keys)');
 
   const ext = (filename?.split('.').pop() || 'bin').toLowerCase();
   const rand = crypto.randomBytes(8).toString('hex');
+  // Prefix por company pra isolar (super admin define o bucket, mas cada
+  // empresa fica na sua pasta: chat/{companyId}/...)
   const key = `${folder}/${companyId}/${Date.now()}-${rand}-${safeFilename(filename || `file.${ext}`)}`;
 
   const client = getClient(cfg);
@@ -73,11 +86,11 @@ async function uploadBuffer({ companyId, buffer, mimetype, filename, folder = 'c
   return { url: publicUrl(cfg, key), key, provider: 's3' };
 }
 
-async function hasS3(companyId) {
-  const cfg = await getConfig(companyId);
+async function hasS3() {
+  const cfg = await getConfig();
   return cfg.provider === 's3' && cfg.bucket && cfg.access_key && cfg.secret_key;
 }
 
-function invalidateCache() { clientCache.clear(); }
+function invalidateCache() { _client = null; _cacheKey = null; }
 
 module.exports = { uploadBuffer, hasS3, invalidateCache, getConfig };
