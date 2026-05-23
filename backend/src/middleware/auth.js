@@ -16,7 +16,10 @@ function authCompany(req, res, next) {
 
 function authRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user) return res.status(403).json({ error: 'Permissão insuficiente' });
+    // Super admin tem god mode: passa por qualquer authRole independente da membership
+    if (req.user.isSuperAdmin) return next();
+    if (!roles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Permissão insuficiente' });
     }
     next();

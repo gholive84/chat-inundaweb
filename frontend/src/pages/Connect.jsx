@@ -4,7 +4,8 @@ import useAuthStore from '../store/authStore';
 
 export default function Connect() {
   const { user } = useAuthStore();
-  const isOwner = user?.role === 'owner';
+  // Super admin se comporta como owner em qualquer empresa
+  const isOwner = user?.role === 'owner' || user?.is_super_admin === true;
   const [instances, setInstances] = useState([]);
   const [agents, setAgents] = useState([]);
   const [limits, setLimits] = useState({ max: 1, used: 0, remaining: 1 });
