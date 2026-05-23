@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
 import useAuthStore from '../store/authStore';
+import { getPermission, requestPermission, notify } from '../services/notifications';
 
 const TABS = [
+  { id: 'app',        label: 'App',          icon: '📱' },
   { id: 'ai',         label: 'IA',           icon: '🤖' },
   { id: 'knowledge',  label: 'Conhecimento', icon: '📚' },
   { id: 'agents',     label: 'Atendentes',   icon: '👥' },
@@ -18,6 +20,128 @@ function Notice({ type = 'info', children }) {
   return (
     <div className="px-3 py-2 rounded-lg text-xs border mb-3"
       style={{ background: styles.bg, borderColor: styles.border, color: styles.color }}>{children}</div>
+  );
+}
+
+// ─── Tab App (PWA + notificações) ─────────────────────────────────
+function TabApp() {
+  const [installable, setInstallable] = useState(!!window.__pwaInstallPrompt);
+  const [installed, setInstalled] = useState(
+    typeof window !== 'undefined' &&
+    (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true)
+  );
+  const [permission, setPermission] = useState(getPermission());
+  const [isIOS] = useState(typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent));
+  const [iosHint, setIosHint] = useState(false);
+
+  useEffect(() => {
+    const onPrompt = (e) => { e.preventDefault(); window.__pwaInstallPrompt = e; setInstallable(true); };
+    const onInstalled = () => { setInstalled(true); setInstallable(false); window.__pwaInstallPrompt = null; };
+    window.addEventListener('beforeinstallprompt', onPrompt);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onPrompt);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
+
+  async function install() {
+    const p = window.__pwaInstallPrompt;
+    if (!p) return;
+    p.prompt();
+    const { outcome } = await p.userChoice;
+    if (outcome === 'accepted') { setInstalled(true); setInstallable(false); window.__pwaInstallPrompt = null; }
+  }
+
+  async function askPermission() {
+    const r = await requestPermission();
+    setPermission(r);
+    if (r === 'granted') {
+      notify({ title: 'Notificações ativadas', body: 'Você vai receber alertas quando chegar mensagem nova.', tag: 'test' });
+    }
+  }
+
+  return (
+    <div className="space-y-5 max-w-2xl">
+      {/* PWA Install */}
+      <div className="rounded-xl border p-5"
+        style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+        <div className="flex items-start gap-3 mb-3">
+          <img src="/icone-chat.png" className="h-10 w-10 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="font-semibold" style={{ color: 'var(--inunda-text)' }}>Instalar como aplicativo</p>
+            <p className="text-xs" style={{ color: 'var(--inunda-text-muted)' }}>
+              Use o Chat Inunda como app nativo no seu desktop ou celular — sem barra do navegador, ícone na home, abre direto.
+            </p>
+          </div>
+        </div>
+
+        {installed ? (
+          <p className="text-sm flex items-center gap-2" style={{ color: '#22c55e' }}>
+            <span>✓</span> App já instalado neste dispositivo
+          </p>
+        ) : installable ? (
+          <button onClick={install} className="btn-primary px-4 py-2 rounded-lg text-sm">
+            📥 Instalar Chat Inunda
+          </button>
+        ) : isIOS ? (
+          <div>
+            <button onClick={() => setIosHint((v) => !v)}
+              className="text-sm px-3 py-1.5 rounded-md border"
+              style={{ color: 'var(--inunda-cyan)', borderColor: 'var(--inunda-border)' }}>
+              📱 Como instalar no iPhone/iPad
+            </button>
+            {iosHint && (
+              <div className="mt-3 px-3 py-2.5 rounded-lg text-xs leading-relaxed"
+                style={{ background: 'rgba(0,212,232,0.08)', color: 'var(--inunda-text-muted)', border: '1px solid rgba(0,212,232,0.25)' }}>
+                1. Toque no botão <strong>Compartilhar ⎙</strong> do Safari<br/>
+                2. Toque em <strong>"Adicionar à Tela de Início"</strong><br/>
+                3. Confirma
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm italic" style={{ color: 'var(--inunda-text-faded)' }}>
+            Seu navegador não está oferecendo instalação. Tente Chrome ou Edge (desktop) ou recarregar a página.
+          </p>
+        )}
+      </div>
+
+      {/* Notificações */}
+      <div className="rounded-xl border p-5"
+        style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+        <div className="flex items-start gap-3 mb-3">
+          <span className="text-2xl">🔔</span>
+          <div className="flex-1">
+            <p className="font-semibold" style={{ color: 'var(--inunda-text)' }}>Notificações de novas mensagens</p>
+            <p className="text-xs" style={{ color: 'var(--inunda-text-muted)' }}>
+              Alerta no navegador quando chegar mensagem em outra conversa (aba sem foco).
+            </p>
+          </div>
+        </div>
+
+        {permission === 'unsupported' && (
+          <p className="text-sm italic" style={{ color: 'var(--inunda-text-faded)' }}>
+            Seu navegador não suporta notificações.
+          </p>
+        )}
+        {permission === 'granted' && (
+          <p className="text-sm flex items-center gap-2" style={{ color: '#22c55e' }}>
+            <span>✓</span> Notificações ativadas
+          </p>
+        )}
+        {permission === 'denied' && (
+          <p className="text-sm" style={{ color: '#ef4444' }}>
+            ⚠ Notificações bloqueadas. Habilite manualmente nas configurações do navegador (cadeado ao lado da URL).
+          </p>
+        )}
+        {(permission === 'default' || !permission) && (
+          <button onClick={askPermission} className="btn-primary px-4 py-2 rounded-lg text-sm">
+            🔔 Ativar notificações
+          </button>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -352,7 +476,7 @@ function Field({ label, children }) {
 // ─── Page ──────────────────────────────────────────────────────────
 export default function Settings() {
   const [tab, setTab] = useState(() => {
-    try { return localStorage.getItem('settings_tab') || 'ai'; } catch { return 'ai'; }
+    try { return localStorage.getItem('settings_tab') || 'app'; } catch { return 'app'; }
   });
   useEffect(() => { try { localStorage.setItem('settings_tab', tab); } catch {} }, [tab]);
 
@@ -378,6 +502,7 @@ export default function Settings() {
         </div>
 
         {/* Cada tab é renderizada inteira (não keep-mount pra simplicidade) */}
+        {tab === 'app'       && <TabApp />}
         {tab === 'ai'        && <TabAI />}
         {tab === 'knowledge' && <TabKnowledge />}
         {tab === 'agents'    && <TabAgents />}

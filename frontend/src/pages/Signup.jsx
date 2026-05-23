@@ -27,7 +27,7 @@ export default function Signup() {
       style={{ background: 'radial-gradient(ellipse at top, rgba(0,212,232,0.08), transparent 60%), #0A1628' }}>
       <div className="relative w-full max-w-md">
         <div className="flex flex-col items-center mb-8">
-          <img src="/inunda-logo.png" alt="Inundaweb" draggable={false} className="h-10 w-auto mb-5" />
+          <img src="/inunda-chat.png" alt="Chat Inunda" draggable={false} className="h-12 w-auto mb-5" />
           <h1 className="text-white text-xl font-semibold tracking-tight">Criar conta</h1>
           <p className="text-cyan-400/60 text-sm mt-1">Comece com sua empresa</p>
         </div>

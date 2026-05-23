@@ -30,7 +30,7 @@ export default function Login() {
 
       <div className="relative w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <img src="/inunda-logo.png" alt="Inundaweb" draggable={false} className="h-10 w-auto mb-5" />
+          <img src="/inunda-chat.png" alt="Chat Inunda" draggable={false} className="h-12 w-auto mb-5" />
           <h1 className="text-white text-xl font-semibold tracking-tight">Chat Inunda</h1>
           <p className="text-cyan-400/60 text-sm mt-1">Atendimento WhatsApp + IA</p>
         </div>

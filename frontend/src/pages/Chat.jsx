@@ -5,6 +5,7 @@ import useSocketStore from '../store/socketStore';
 import ChatPanel from '../components/ChatPanel';
 import ContactInfoPanel from '../components/ContactInfoPanel';
 import { relativeTime } from '../utils/relativeTime';
+import { notify } from '../services/notifications';
 
 function ConversationList({ items, activeId, onSelect }) {
   return (
@@ -104,13 +105,28 @@ export default function Chat() {
   useEffect(() => {
     if (!socket) return;
     const onUpdate = () => load();
+    const onNewMsg = (payload) => {
+      load();
+      // Notifica se conversa nao e a ativa e msg veio do contato
+      if (payload?.message && !payload.message.from_me && payload.conversationId !== activeId) {
+        // Busca o nome do contato pra mostrar
+        const conv = items.find((c) => c.id === payload.conversationId);
+        const who = conv?.contact_name || conv?.push_name || conv?.phone || 'Mensagem nova';
+        notify({
+          title: who,
+          body: payload.message.body || '[mídia]',
+          tag: `conv-${payload.conversationId}`,
+          onClick: () => navigate(`/app/chat/${payload.conversationId}`),
+        });
+      }
+    };
     socket.on('conversation:update', onUpdate);
-    socket.on('message:new', onUpdate);
+    socket.on('message:new', onNewMsg);
     return () => {
       socket.off('conversation:update', onUpdate);
-      socket.off('message:new', onUpdate);
+      socket.off('message:new', onNewMsg);
     };
-  }, [socket]);
+  }, [socket, activeId, items, navigate]);
 
   return (
     <div className="flex h-full">
@@ -181,7 +197,7 @@ export default function Chat() {
       ) : (
         <div className="hidden md:flex flex-1 flex-col items-center justify-center text-center p-8"
           style={{ background: 'var(--inunda-bg-deep)', color: 'var(--inunda-text-muted)' }}>
-          <img src="/inunda-logo.png" className="h-10 w-auto mb-4 opacity-50" />
+          <img src="/icone-chat.png" className="h-12 w-auto mb-4 opacity-60" />
           <p className="text-sm">Selecione uma conversa pra começar</p>
         </div>
       )}

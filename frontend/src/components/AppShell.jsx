@@ -23,7 +23,7 @@ export default function AppShell() {
       <aside className="hidden md:flex w-16 flex-col items-center py-4 gap-2 border-r flex-shrink-0"
         style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
         <div className="mb-2">
-          <img src="/inunda-logo.png" alt="" draggable={false} className="h-5 w-auto" />
+          <img src="/icone-chat.png" alt="Chat Inunda" draggable={false} className="h-7 w-auto" />
         </div>
         <div className="flex-1 flex flex-col items-center gap-1.5 mt-3">
           <NavIcon to="/app/chat" label="Conversas">
