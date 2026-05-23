@@ -7,7 +7,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icone-chat.png', 'inunda-chat.png'],
+      includeAssets: ['icone-chat.png', 'inunda-chat.png', 'icone-chat-192.png', 'icone-chat-512.png', 'icone-chat-192-maskable.png', 'icone-chat-512-maskable.png'],
       manifest: {
         name: 'Chat Inunda',
         short_name: 'Chat Inunda',
@@ -19,8 +19,10 @@ export default defineConfig({
         scope: '/',
         orientation: 'portrait-primary',
         icons: [
-          { src: '/icone-chat.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
-          { src: '/icone-chat.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' },
+          { src: '/icone-chat-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: '/icone-chat-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: '/icone-chat-192-maskable.png', sizes: '192x192', type: 'image/png', purpose: 'maskable' },
+          { src: '/icone-chat-512-maskable.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
       workbox: {
