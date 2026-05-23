@@ -92,6 +92,28 @@ async function runMigrations() {
     )
   `);
 
+  // ── User memberships em multiplas companies ──────────────────────────
+  // Um user pode ser owner de varias empresas. A coluna company_id em users
+  // funciona como "empresa principal" (a do signup), mas o user pode ter
+  // memberships extras via essa tabela.
+  await safe(`
+    CREATE TABLE IF NOT EXISTS user_memberships (
+      id            SERIAL PRIMARY KEY,
+      user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      company_id    INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      role          VARCHAR(20) DEFAULT 'agent',
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (user_id, company_id)
+    )
+  `);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_memberships_user ON user_memberships(user_id)`);
+  // Backfill: garante membership pra cada user existente (a partir do company_id principal)
+  await safe(`
+    INSERT INTO user_memberships (user_id, company_id, role)
+    SELECT id, company_id, role FROM users
+    ON CONFLICT DO NOTHING
+  `);
+
   // ── WhatsApp instances ───────────────────────────────────────────────
   // status: pending | connecting | connected | disconnected | error
   // provider: evolution | zapi | official

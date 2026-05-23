@@ -172,7 +172,11 @@ export default function Crm() {
                               {(provided, snapshot) => (
                                 <div ref={provided.innerRef} {...provided.draggableProps}
                                   className={`rounded-lg transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-1 ring-cyan-400' : 'hover:bg-white/[0.04]'}`}
-                                  style={{ background: 'var(--inunda-bg-deep)', border: '1px solid var(--inunda-border)' }}>
+                                  style={{
+                                    background: 'var(--inunda-bg-deep)',
+                                    border: '1px solid var(--inunda-border)',
+                                    ...provided.draggableProps.style, // ← preserva transform durante drag
+                                  }}>
                                   {/* Drag handle visivel: cabecalho do card */}
                                   <div {...provided.dragHandleProps}
                                     className="flex items-center gap-2 px-3 pt-2.5 pb-1.5 cursor-grab active:cursor-grabbing">
