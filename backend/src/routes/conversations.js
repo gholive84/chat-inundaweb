@@ -18,7 +18,7 @@ router.get('/', authCompany, async (req, res) => {
 
     params.push(parseInt(limit));
     const sql = `
-      SELECT c.id, c.status, c.ai_enabled, c.ai_paused_until, c.unread_count,
+      SELECT c.id, c.status, c.ai_enabled, c.ai_paused_until, c.unread_count, c.is_urgent,
              c.last_message_at, c.last_message_preview, c.assigned_to_user_id,
              ct.id AS contact_id, ct.phone, ct.name AS contact_name, ct.push_name, ct.profile_pic_url,
              ct.crm_stage,
@@ -27,7 +27,7 @@ router.get('/', authCompany, async (req, res) => {
       JOIN contacts ct ON ct.id = c.contact_id
       LEFT JOIN users u ON u.id = c.assigned_to_user_id
       WHERE ${where.join(' AND ')}
-      ORDER BY c.last_message_at DESC NULLS LAST
+      ORDER BY c.is_urgent DESC NULLS LAST, c.last_message_at DESC NULLS LAST
       LIMIT $${params.length}
     `;
     const { rows } = await pool.query(sql, params);
@@ -88,6 +88,19 @@ router.post('/:id/assign', authCompany, async (req, res) => {
       'UPDATE conversations SET assigned_to_user_id=$1 WHERE id=$2 AND company_id=$3',
       [user_id || null, req.params.id, req.user.companyId]
     );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
+router.post('/:id/urgent', authCompany, async (req, res) => {
+  try {
+    const { urgent } = req.body;
+    await pool.query(
+      'UPDATE conversations SET is_urgent=$1 WHERE id=$2 AND company_id=$3',
+      [!!urgent, req.params.id, req.user.companyId]
+    );
+    const io = req.app.get('io');
+    io?.to(`company:${req.user.companyId}`).emit('conversation:update', { conversationId: req.params.id });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
 });

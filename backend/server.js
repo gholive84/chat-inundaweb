@@ -152,6 +152,8 @@ async function runMigrations() {
   `);
   await safe(`CREATE INDEX IF NOT EXISTS idx_conv_company_status ON conversations(company_id, status)`);
   await safe(`CREATE INDEX IF NOT EXISTS idx_conv_last_msg ON conversations(last_message_at DESC)`);
+  await safe(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS is_urgent BOOLEAN DEFAULT FALSE`);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_conv_urgent ON conversations(company_id, is_urgent DESC, last_message_at DESC)`);
 
   // ── Messages ─────────────────────────────────────────────────────────
   // author_type: contact | agent | ai | system

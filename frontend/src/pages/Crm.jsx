@@ -147,9 +147,9 @@ export default function Crm() {
               const list = byStage.get(col.id) || [];
               const color = STAGE_COLORS[col.color] || col.color || '#6b7280';
               return (
-                <div key={col.id} className="flex-shrink-0 w-72 flex flex-col rounded-xl"
+                <div key={col.id} className="flex-shrink-0 w-72 flex flex-col rounded-xl h-full"
                   style={{ background: 'var(--inunda-bg-surface)', border: '1px solid var(--inunda-border)' }}>
-                  <div className="px-3 py-2.5 border-b flex items-center justify-between"
+                  <div className="px-3 py-2.5 border-b flex items-center justify-between flex-shrink-0"
                     style={{ borderColor: 'var(--inunda-border)' }}>
                     <div className="flex items-center gap-2">
                       <span className="w-2 h-2 rounded-full" style={{ background: color }} />
@@ -163,7 +163,7 @@ export default function Crm() {
                   <Droppable droppableId={col.id}>
                     {(provided, snapshot) => (
                       <div ref={provided.innerRef} {...provided.droppableProps}
-                        className={`flex-1 overflow-y-auto p-2 space-y-2 min-h-16 transition-colors ${snapshot.isDraggingOver ? 'bg-white/[0.03]' : ''}`}>
+                        className={`flex-1 overflow-y-auto p-2 space-y-2 min-h-[120px] transition-colors ${snapshot.isDraggingOver ? 'bg-white/[0.03]' : ''}`}>
                         {list.map((c, index) => {
                           const cv = convByContact.get(c.id);
                           const name = c.name || c.push_name || c.phone;

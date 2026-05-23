@@ -5,6 +5,7 @@ import Signup from './pages/Signup';
 import AppShell from './components/AppShell';
 import Chat from './pages/Chat';
 import Crm from './pages/Crm';
+import Contacts from './pages/Contacts';
 import Settings from './pages/Settings';
 import Connect from './pages/Connect';
 
@@ -25,6 +26,7 @@ export default function App() {
         <Route path="chat"    element={<Chat />} />
         <Route path="chat/:id" element={<Chat />} />
         <Route path="crm"     element={<Crm />} />
+        <Route path="contacts" element={<Contacts />} />
         <Route path="settings" element={<Settings />} />
         <Route path="connect" element={<Connect />} />
       </Route>

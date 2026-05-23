@@ -110,8 +110,14 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
   const [aiToggling, setAiToggling] = useState(false);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [recSeconds, setRecSeconds] = useState(0);
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const textareaRef = useRef(null);
+  const mediaRecRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recTimerRef = useRef(null);
   const socket = useSocketStore((s) => s.socket) || useSocketStore.getState().connect();
   const typingTimer = useRef(null);
   const bottomRef = useAutoScroll([messages.length], conversationId);
@@ -229,6 +235,55 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
     }
   }
 
+  async function startRecording() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : (MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : 'audio/webm');
+      const rec = new MediaRecorder(stream, { mimeType: mime });
+      audioChunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data.size) audioChunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mime });
+        const ext = mime.includes('mp4') ? 'm4a' : 'ogg';
+        const file = new File([blob], `audio-${Date.now()}.${ext}`, { type: mime });
+        sendFile(file);
+      };
+      rec.start();
+      mediaRecRef.current = rec;
+      setRecording(true);
+      setRecSeconds(0);
+      recTimerRef.current = setInterval(() => setRecSeconds((s) => s + 1), 1000);
+    } catch (e) {
+      alert('Permita acesso ao microfone pra gravar áudio');
+    }
+  }
+
+  function stopRecording() {
+    mediaRecRef.current?.stop();
+    clearInterval(recTimerRef.current);
+    setRecording(false);
+    setRecSeconds(0);
+  }
+
+  function cancelRecording() {
+    if (mediaRecRef.current) {
+      mediaRecRef.current.onstop = null;
+      mediaRecRef.current.stop();
+      mediaRecRef.current.stream?.getTracks().forEach((t) => t.stop());
+    }
+    clearInterval(recTimerRef.current);
+    setRecording(false);
+    setRecSeconds(0);
+    audioChunksRef.current = [];
+  }
+
+  function fmtSec(s) {
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  }
+
   async function toggleAI() {
     if (!conv) return;
     setAiToggling(true);
@@ -252,6 +307,14 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
     } catch {}
   }
 
+  async function toggleUrgent() {
+    if (!conv) return;
+    try {
+      await api.post(`/conversations/${conversationId}/urgent`, { urgent: !conv.is_urgent });
+      setConv((p) => ({ ...p, is_urgent: !p.is_urgent }));
+    } catch {}
+  }
+
   if (!conv) {
     return (
       <div className="flex-1 flex items-center justify-center" style={{ color: 'var(--inunda-text-muted)' }}>
@@ -265,7 +328,7 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
   const aiPaused = aiPausedUntil && aiPausedUntil > new Date();
 
   return (
-    <div className="flex-1 flex flex-col h-full" style={{ background: 'var(--inunda-bg-deep)' }}>
+    <div className="flex-1 flex flex-col min-h-0 h-full" style={{ background: 'var(--inunda-bg-deep)' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b"
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
@@ -286,6 +349,17 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
           <p className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{contactName}</p>
           <p className="text-xs font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{conv.phone}</p>
         </div>
+        <button onClick={toggleUrgent}
+          title={conv.is_urgent ? 'Remover urgência' : 'Marcar como urgente'}
+          className="p-2 rounded-lg transition-colors"
+          style={{
+            background: conv.is_urgent ? 'rgba(239,68,68,0.18)' : 'transparent',
+            color: conv.is_urgent ? '#ef4444' : 'var(--inunda-text-muted)',
+          }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill={conv.is_urgent ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+            <path d="M12 2L1 21h22L12 2z"/><line x1="12" y1="9" x2="12" y2="13" stroke={conv.is_urgent ? '#fff' : 'currentColor'}/><circle cx="12" cy="17" r="0.5" fill={conv.is_urgent ? '#fff' : 'currentColor'}/>
+          </svg>
+        </button>
         {conv.status === 'resolved' ? (
           <button onClick={reopenConv}
             className="px-2.5 py-1.5 rounded-lg text-xs font-medium"
@@ -343,6 +417,24 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
         </div>
       )}
 
+      {/* Recording bar */}
+      {recording && (
+        <div className="flex items-center gap-3 px-3 py-2.5 border-t"
+          style={{ background: 'rgba(239,68,68,0.08)', borderColor: 'var(--inunda-border)' }}>
+          <span className="w-3 h-3 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+          <span className="text-sm font-mono-inunda text-red-400 font-medium">{fmtSec(recSeconds)}</span>
+          <span className="text-xs flex-1" style={{ color: 'var(--inunda-text-muted)' }}>Gravando áudio…</span>
+          <button type="button" onClick={cancelRecording}
+            className="text-xs px-3 py-1 rounded-md hover:bg-white/5"
+            style={{ color: 'var(--inunda-text-muted)' }}>Cancelar</button>
+          <button type="button" onClick={stopRecording}
+            className="text-xs px-3 py-1 rounded-md flex items-center gap-1.5"
+            style={{ background: '#22c55e', color: '#fff' }}>
+            <span className="w-2 h-2 bg-white rounded-sm" /> Enviar
+          </button>
+        </div>
+      )}
+
       {/* Input */}
       <form onSubmit={send} className="px-3 py-3 border-t flex items-end gap-1.5 relative"
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
@@ -384,6 +476,19 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
           accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
           onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f, text); e.target.value = ''; setText(''); }} />
 
+        {/* Camera (mobile) */}
+        <button type="button" onClick={() => cameraInputRef.current?.click()}
+          title="Câmera (mobile)"
+          className="md:hidden w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06] transition-colors"
+          style={{ color: 'var(--inunda-text-muted)' }}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </button>
+        <input ref={cameraInputRef} type="file" className="hidden" accept="image/*" capture="environment"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f, text); e.target.value = ''; setText(''); }} />
+
         <textarea
           ref={textareaRef}
           rows={1}
@@ -395,13 +500,25 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
           className="flex-1 bg-white/5 border rounded-2xl px-4 py-2 text-sm resize-none max-h-32 focus:outline-none focus:border-cyan-400"
           style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
 
-        <button type="submit" disabled={!text.trim() || sending}
-          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-40"
-          style={{ background: 'var(--inunda-cyan)', color: 'var(--inunda-bg-deep)' }}>
-          {sending ? '…' : (
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
-          )}
-        </button>
+        {text.trim() ? (
+          <button type="submit" disabled={sending}
+            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-40"
+            style={{ background: 'var(--inunda-cyan)', color: 'var(--inunda-bg-deep)' }}>
+            {sending ? '…' : (
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+            )}
+          </button>
+        ) : (
+          <button type="button" onClick={startRecording}
+            title="Gravar áudio"
+            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:bg-red-500/15"
+            style={{ color: '#ef4444' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+          </button>
+        )}
       </form>
     </div>
   );

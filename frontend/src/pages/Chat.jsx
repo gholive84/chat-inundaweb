@@ -31,7 +31,16 @@ function ConversationList({ items, activeId, onSelect }) {
             )}
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{name}</p>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {c.is_urgent && (
+                    <span title="Urgente" className="flex-shrink-0">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="#ef4444" stroke="#ef4444" strokeWidth="2">
+                        <path d="M12 2L1 21h22L12 2z"/><line x1="12" y1="9" x2="12" y2="13" stroke="#fff"/><circle cx="12" cy="17" r="0.5" fill="#fff"/>
+                      </svg>
+                    </span>
+                  )}
+                  <p className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{name}</p>
+                </div>
                 <span className="text-[10px] flex-shrink-0" style={{ color: c.unread_count > 0 ? 'var(--inunda-cyan)' : 'var(--inunda-text-faded)' }}>
                   {relativeTime(c.last_message_at)}
                 </span>
