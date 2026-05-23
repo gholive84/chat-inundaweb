@@ -239,11 +239,94 @@ function UsersTab() {
   );
 }
 
+const PROVIDER_LABEL = {
+  evolution: { label: 'Evolution', color: '#22c55e' },
+  zapi: { label: 'Z-API', color: '#8b5cf6' },
+  official: { label: 'Oficial', color: '#0ea5e9' },
+};
+
+function InstancesTab() {
+  const [items, setItems] = useState([]);
+  useEffect(() => { api.get('/admin/instances').then((r) => setItems(r.data)).catch(() => {}); }, []);
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr>
+              {['Caixa', 'Empresa', 'Provider', 'Status', 'Conv', 'Msgs', 'Agentes', 'Última atividade'].map((h) => (
+                <th key={h} className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-semibold border-b"
+                  style={{ color: 'var(--inunda-text-faded)', borderColor: 'var(--inunda-border)' }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((i) => {
+              const prov = PROVIDER_LABEL[i.provider] || { label: i.provider, color: '#6b7280' };
+              const statusColor =
+                i.status === 'connected' ? '#22c55e' :
+                i.status === 'connecting' ? 'var(--inunda-cyan)' :
+                i.status === 'disconnected' ? '#fbbf24' : '#6b7280';
+              return (
+                <tr key={i.id} className="hover:bg-white/[0.03] border-b" style={{ borderColor: 'var(--inunda-border)' }}>
+                  <td className="px-3 py-2.5">
+                    <p className="font-medium" style={{ color: 'var(--inunda-text)' }}>{i.display_name || '(sem nome)'}</p>
+                    <p className="text-[10px] font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{i.instance_name}</p>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <p className="text-xs" style={{ color: 'var(--inunda-text)' }}>{i.company_name}</p>
+                    <p className="text-[10px] font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{i.company_slug}</p>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full"
+                      style={{ background: `${prov.color}26`, color: prov.color }}>
+                      {prov.label}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full" style={{ background: statusColor }} />
+                      <span className="text-xs" style={{ color: statusColor }}>{i.status}</span>
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--inunda-text-muted)' }}>{i.conversations_count}</td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--inunda-text-muted)' }}>{i.messages_count}</td>
+                  <td className="px-3 py-2.5">
+                    {(i.agents || []).length === 0 ? (
+                      <span className="text-[10px] italic" style={{ color: 'var(--inunda-text-faded)' }}>—</span>
+                    ) : (
+                      <div className="flex flex-wrap gap-0.5">
+                        {(i.agents || []).slice(0, 3).map((a) => (
+                          <span key={a.id} className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--inunda-text-muted)' }}>{a.name}</span>
+                        ))}
+                        {i.agents?.length > 3 && (
+                          <span className="text-[10px]" style={{ color: 'var(--inunda-text-faded)' }}>+{i.agents.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--inunda-text-faded)' }}>
+                    {i.last_event_at ? new Date(i.last_event_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+            {items.length === 0 && (
+              <tr><td colSpan={8} className="text-center py-10" style={{ color: 'var(--inunda-text-faded)' }}>Nenhuma caixa conectada</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function SuperAdmin() {
   const [tab, setTab] = useState('companies');
   return (
     <div className="h-full overflow-y-auto">
-      <div className="max-w-5xl mx-auto p-5 md:p-8">
+      <div className="max-w-6xl mx-auto p-5 md:p-8">
         <div className="flex items-center gap-2 mb-1">
           <h1 className="text-2xl font-bold" style={{ color: 'var(--inunda-text)' }}>Super Admin</h1>
           <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(168,85,247,0.18)', color: '#c084fc' }}>
@@ -251,16 +334,18 @@ export default function SuperAdmin() {
           </span>
         </div>
         <p className="text-sm mb-5" style={{ color: 'var(--inunda-text-muted)' }}>
-          Gerencia todas as empresas e usuários da plataforma
+          Gerencia todas as empresas, usuários e caixas WhatsApp da plataforma
         </p>
 
-        <div className="flex gap-1 border-b mb-5" style={{ borderColor: 'var(--inunda-border)' }}>
+        <div className="flex gap-1 border-b mb-5 overflow-x-auto" style={{ borderColor: 'var(--inunda-border)' }}>
           <Tab active={tab === 'companies'} onClick={() => setTab('companies')}>🏢 Empresas</Tab>
           <Tab active={tab === 'users'} onClick={() => setTab('users')}>👥 Usuários</Tab>
+          <Tab active={tab === 'instances'} onClick={() => setTab('instances')}>📦 Instâncias WhatsApp</Tab>
         </div>
 
         {tab === 'companies' && <CompaniesTab />}
         {tab === 'users' && <UsersTab />}
+        {tab === 'instances' && <InstancesTab />}
       </div>
     </div>
   );

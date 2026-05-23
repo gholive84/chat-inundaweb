@@ -96,6 +96,29 @@ router.delete('/users/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
 });
 
+// ── INSTANCES (todas as caixas WhatsApp de todas as empresas) ────────
+router.get('/instances', async (req, res) => {
+  try {
+    const { rows } = await pool.query(`
+      SELECT i.id, i.provider, i.instance_name, i.display_name, i.phone_number,
+             i.status, i.last_event_at, i.created_at,
+             c.id AS company_id, c.name AS company_name, c.slug AS company_slug,
+             (SELECT COUNT(*) FROM conversations cv WHERE cv.instance_id = i.id) AS conversations_count,
+             (SELECT COUNT(*) FROM messages m JOIN conversations cv ON cv.id = m.conversation_id WHERE cv.instance_id = i.id) AS messages_count,
+             (SELECT json_agg(json_build_object('id', u.id, 'name', u.name))
+               FROM instance_agents ia JOIN users u ON u.id = ia.user_id
+               WHERE ia.instance_id = i.id) AS agents
+      FROM whatsapp_instances i
+      JOIN companies c ON c.id = i.company_id
+      ORDER BY i.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /admin/instances', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
 // ── MEMBERSHIPS ──────────────────────────────────────────────────────
 router.post('/users/:userId/memberships', async (req, res) => {
   try {

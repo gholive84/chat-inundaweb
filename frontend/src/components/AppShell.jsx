@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import CompanySwitcher from './CompanySwitcher';
+import UserMenu from './UserMenu';
 
 function NavIcon({ to, label, children }) {
   return (
@@ -63,33 +64,24 @@ export default function AppShell() {
           </NavIcon>
         </div>
 
-        <div className="flex flex-col items-center gap-2 mt-auto">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold"
-            title={`${user?.name} · ${company?.name}`}
-            style={{ background: 'var(--inunda-cyan-faint)', color: 'var(--inunda-cyan)' }}>
-            {user?.name?.[0]?.toUpperCase() || '?'}
-          </div>
-          <button onClick={() => { logout(); navigate('/login'); }} title="Sair"
-            className="text-white/40 hover:text-white p-2 rounded-lg">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/>
-            </svg>
-          </button>
-        </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 min-h-0">
-        {/* Top bar com seletor de empresa */}
-        <div className="hidden md:flex items-center px-3 py-2 border-b flex-shrink-0"
+        {/* Top bar com seletor de empresa + user menu */}
+        <div className="hidden md:flex items-center justify-between px-3 py-2 border-b flex-shrink-0"
           style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
           <CompanySwitcher />
+          <UserMenu />
         </div>
 
-        {/* Top bar mobile — logo + switcher */}
-        <div className="md:hidden flex items-center justify-between px-3 py-2 border-b flex-shrink-0"
+        {/* Top bar mobile — logo + switcher + user menu */}
+        <div className="md:hidden flex items-center justify-between gap-2 px-3 py-2 border-b flex-shrink-0"
           style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
           <img src="/icone-chat.png" alt="Chat Inunda" className="h-6 w-auto" />
-          <CompanySwitcher />
+          <div className="flex-1 flex justify-end items-center gap-2">
+            <CompanySwitcher />
+            <UserMenu />
+          </div>
         </div>
 
         <main className="flex-1 overflow-hidden min-h-0">
