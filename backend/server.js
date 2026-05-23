@@ -239,6 +239,8 @@ async function runMigrations() {
       updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+  // Default da IA em conversas novas (independente do enabled global)
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS default_conversation_ai BOOLEAN DEFAULT TRUE`);
 
   // ── Provider configs (Evolution / Z-API / Oficial) ──────────────────
   await safe(`

@@ -41,7 +41,16 @@ function TabAI() {
       {ok && <Notice type="success">{ok}</Notice>}
       <label className="flex items-center gap-3 cursor-pointer">
         <input type="checkbox" checked={!!config.enabled} onChange={(e) => set({ enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
-        <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>Habilitar resposta automática por IA</span>
+        <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>Habilitar resposta automática por IA (global)</span>
+      </label>
+      <label className="flex items-start gap-3 cursor-pointer pl-6 -mt-2">
+        <input type="checkbox" checked={config.default_conversation_ai !== false} onChange={(e) => set({ default_conversation_ai: e.target.checked })} className="w-4 h-4 accent-cyan-400 mt-0.5" />
+        <div>
+          <span className="text-sm block" style={{ color: 'var(--inunda-text)' }}>Novas conversas iniciam com IA <strong>ligada</strong></span>
+          <span className="text-xs block mt-0.5" style={{ color: 'var(--inunda-text-faded)' }}>
+            Desmarque pra testar — você ativa a IA manualmente conversa por conversa via botão 🤖 no header
+          </span>
+        </div>
       </label>
       <Field label="Provider">
         <select value={config.provider} onChange={(e) => set({ provider: e.target.value })} className={inputCls}>

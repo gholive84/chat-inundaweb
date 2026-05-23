@@ -105,10 +105,16 @@ async function handleIncomingMessage(app, inst, payload) {
   );
   if (cv.length) convId = cv[0].id;
   else {
+    // Lê default_conversation_ai da company
+    const { rows: cfg } = await pool.query(
+      'SELECT COALESCE(default_conversation_ai, TRUE) AS def FROM ai_configs WHERE company_id=$1',
+      [inst.company_id]
+    );
+    const defaultAi = cfg.length ? !!cfg[0].def : true;
     const { rows: ins } = await pool.query(
       `INSERT INTO conversations (company_id, instance_id, contact_id, status, ai_enabled)
-       VALUES ($1,$2,$3,'open',TRUE) RETURNING id`,
-      [inst.company_id, inst.id, contactId]
+       VALUES ($1,$2,$3,'open',$4) RETURNING id`,
+      [inst.company_id, inst.id, contactId, defaultAi]
     );
     convId = ins[0].id;
   }
