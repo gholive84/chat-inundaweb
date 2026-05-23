@@ -7,7 +7,7 @@ import ContactInfoPanel from '../components/ContactInfoPanel';
 import { relativeTime } from '../utils/relativeTime';
 import { notify } from '../services/notifications';
 
-function ConversationList({ items, activeId, onSelect }) {
+function ConversationList({ items, activeId, onSelect, showInstance }) {
   return (
     <div className="overflow-y-auto h-full">
       {items.length === 0 && (
@@ -57,6 +57,12 @@ function ConversationList({ items, activeId, onSelect }) {
                   </span>
                 )}
               </div>
+              {showInstance && c.instance_label && (
+                <span className="inline-block text-[9px] uppercase tracking-wider mt-1 px-1.5 py-0.5 rounded"
+                  style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--inunda-text-faded)' }}>
+                  📦 {c.instance_label}
+                </span>
+              )}
             </div>
           </button>
         );
@@ -72,18 +78,23 @@ export default function Chat() {
   const [activeConv, setActiveConv] = useState(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('open');
-  const [assigned, setAssigned] = useState('all'); // all | me | unassigned
+  const [assigned, setAssigned] = useState('all');
+  const [instanceFilter, setInstanceFilter] = useState('all');
+  const [instances, setInstances] = useState([]);
   const [infoOpen, setInfoOpen] = useState(() => {
     try { return localStorage.getItem('chat_info_panel_open') !== 'false'; } catch { return true; }
   });
   const socket = useSocketStore((s) => s.socket) || useSocketStore.getState().connect();
   const activeId = parseInt(id);
 
+  useEffect(() => { api.get('/instances').then((r) => setInstances(r.data)).catch(() => {}); }, []);
+
   function load() {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (assigned !== 'all') params.set('assigned', assigned);
     if (search.trim()) params.set('search', search.trim());
+    if (instanceFilter !== 'all') params.set('instance_id', instanceFilter);
     api.get(`/conversations?${params}`).then((r) => setItems(r.data)).catch(() => {});
   }
   // debounce search
@@ -91,7 +102,7 @@ export default function Chat() {
     const t = setTimeout(load, 300);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, assigned, search]);
+  }, [status, assigned, search, instanceFilter]);
 
   useEffect(() => { try { localStorage.setItem('chat_info_panel_open', String(infoOpen)); } catch {} }, [infoOpen]);
 
@@ -172,8 +183,20 @@ export default function Chat() {
               </button>
             ))}
           </div>
+          {instances.length > 1 && (
+            <select value={instanceFilter} onChange={(e) => setInstanceFilter(e.target.value)}
+              className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
+              <option value="all">📦 Todas as caixas</option>
+              {instances.map((i) => (
+                <option key={i.id} value={i.id}>📦 {i.display_name || i.instance_name}</option>
+              ))}
+            </select>
+          )}
         </div>
-        <ConversationList items={items} activeId={activeId} onSelect={(cid) => navigate(`/app/chat/${cid}`)} />
+        <ConversationList items={items} activeId={activeId}
+          showInstance={instances.length > 1}
+          onSelect={(cid) => navigate(`/app/chat/${cid}`)} />
       </div>
 
       {/* Painel central */}

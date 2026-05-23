@@ -20,6 +20,7 @@ const contactRoutes = require('./src/routes/contacts');
 const storageRoutes = require('./src/routes/storage');
 const knowledgeRoutes = require('./src/routes/knowledge');
 const adminRoutes = require('./src/routes/admin');
+const scheduledRoutes = require('./src/routes/scheduled');
 
 const initSocket = require('./src/socket');
 
@@ -52,6 +53,7 @@ app.use('/api/contacts', contactRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/scheduled', scheduledRoutes);
 
 app.set('io', io);
 initSocket(io);
@@ -142,6 +144,17 @@ async function runMigrations() {
       created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
   `);
+
+  // Agentes atribuidos a uma instancia (caixa). Vazio = todos da company veem
+  await safe(`
+    CREATE TABLE IF NOT EXISTS instance_agents (
+      instance_id   INTEGER NOT NULL REFERENCES whatsapp_instances(id) ON DELETE CASCADE,
+      user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (instance_id, user_id)
+    )
+  `);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_instance_agents_user ON instance_agents(user_id)`);
 
   // ── Contacts (WhatsApp contacts) ─────────────────────────────────────
   await safe(`
@@ -304,6 +317,24 @@ async function runMigrations() {
     )
   `);
 
+  // ── Scheduled messages ───────────────────────────────────────────────
+  await safe(`
+    CREATE TABLE IF NOT EXISTS scheduled_messages (
+      id              SERIAL PRIMARY KEY,
+      company_id      INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      contact_id      INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+      instance_id     INTEGER NOT NULL REFERENCES whatsapp_instances(id) ON DELETE CASCADE,
+      created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      body            TEXT NOT NULL,
+      scheduled_for   TIMESTAMP NOT NULL,
+      status          VARCHAR(20) DEFAULT 'pending',  -- pending | sent | failed | cancelled
+      sent_at         TIMESTAMP,
+      error           TEXT,
+      created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_messages(status, scheduled_for) WHERE status='pending'`);
+
   // ── AI Knowledge base (arquivos e URLs) ──────────────────────────────
   await safe(`
     CREATE TABLE IF NOT EXISTS ai_knowledge (
@@ -330,6 +361,8 @@ async function start() {
   server.listen(PORT, () => {
     console.log(`🚀 Chat-Inunda backend on :${PORT}`);
   });
+  // Workers
+  require('./src/services/scheduledSender').start(app);
 }
 
 start().catch((e) => { console.error(e); process.exit(1); });

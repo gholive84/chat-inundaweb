@@ -6,7 +6,7 @@ const { authCompany } = require('../middleware/auth');
 // Lista conversas (com filtros: status, assigned, search)
 router.get('/', authCompany, async (req, res) => {
   try {
-    const { status = 'open', assigned, search, limit = 100 } = req.query;
+    const { status = 'open', assigned, search, instance_id, limit = 100 } = req.query;
     const where = ['c.company_id = $1'];
     const params = [req.user.companyId];
 
@@ -15,17 +15,35 @@ router.get('/', authCompany, async (req, res) => {
     else if (assigned === 'unassigned') where.push('c.assigned_to_user_id IS NULL');
     else if (assigned && assigned !== 'all') { params.push(assigned); where.push(`c.assigned_to_user_id = $${params.length}`); }
     if (search) { params.push(`%${search}%`); where.push(`(ct.name ILIKE $${params.length} OR ct.phone ILIKE $${params.length} OR c.last_message_preview ILIKE $${params.length})`); }
+    if (instance_id) { params.push(parseInt(instance_id)); where.push(`c.instance_id = $${params.length}`); }
+
+    // Se nao for owner: restringe pelas instancias atribuidas (se houver atribuicao).
+    // Logica: se user tem alguma entrada em instance_agents, so ve essas instancias.
+    // Se nao tem nenhuma → owner-mode (ve todas da company).
+    if (req.user.role !== 'owner') {
+      const { rows: assigned } = await pool.query(
+        'SELECT instance_id FROM instance_agents WHERE user_id=$1',
+        [req.user.id]
+      );
+      if (assigned.length > 0) {
+        const ids = assigned.map((a) => a.instance_id);
+        params.push(ids);
+        where.push(`c.instance_id = ANY($${params.length}::int[])`);
+      }
+    }
 
     params.push(parseInt(limit));
     const sql = `
       SELECT c.id, c.status, c.ai_enabled, c.ai_paused_until, c.unread_count, c.is_urgent,
-             c.last_message_at, c.last_message_preview, c.assigned_to_user_id,
+             c.last_message_at, c.last_message_preview, c.assigned_to_user_id, c.instance_id,
              ct.id AS contact_id, ct.phone, ct.name AS contact_name, ct.push_name, ct.profile_pic_url,
              ct.crm_stage,
-             u.name AS agent_name, u.avatar_url AS agent_avatar_url
+             u.name AS agent_name, u.avatar_url AS agent_avatar_url,
+             i.display_name AS instance_label
       FROM conversations c
       JOIN contacts ct ON ct.id = c.contact_id
       LEFT JOIN users u ON u.id = c.assigned_to_user_id
+      LEFT JOIN whatsapp_instances i ON i.id = c.instance_id
       WHERE ${where.join(' AND ')}
       ORDER BY c.is_urgent DESC NULLS LAST, c.last_message_at DESC NULLS LAST
       LIMIT $${params.length}

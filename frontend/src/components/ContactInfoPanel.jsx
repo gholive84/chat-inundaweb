@@ -21,6 +21,9 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
   const [convTagIds, setConvTagIds] = useState(new Set());
   const [stages, setStages] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [instances, setInstances] = useState([]);
+  const [scheduled, setScheduled] = useState([]);
+  const [schedForm, setSchedForm] = useState(null); // { body, scheduled_for, instance_id }
   const [newNote, setNewNote] = useState('');
   const [newTag, setNewTag] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -38,6 +41,8 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
     api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
     api.get('/crm/stages').then((r) => setStages(r.data)).catch(() => {});
     api.get('/companies/agents').then((r) => setAgents(r.data)).catch(() => {});
+    api.get('/instances').then((r) => setInstances(r.data)).catch(() => {});
+    api.get(`/scheduled/contact/${conv.contact_id}`).then((r) => setScheduled(r.data)).catch(() => {});
     api.get(`/tags/conversation/${conv.id}`)
       .then((r) => setConvTagIds(new Set((r.data || []).map((t) => t.id))))
       .catch(() => setConvTagIds(new Set()));
@@ -104,6 +109,22 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
       await api.post(`/conversations/${conv.id}/assign`, { user_id: userId || null });
       onConvUpdate?.({ assigned_to_user_id: userId || null });
     } catch {}
+  }
+
+  async function createScheduled() {
+    if (!schedForm?.body?.trim() || !schedForm?.scheduled_for || !schedForm?.instance_id) {
+      alert('Preencha mensagem, data/hora e caixa'); return;
+    }
+    try {
+      const { data } = await api.post(`/scheduled/contact/${conv.contact_id}`, schedForm);
+      setScheduled((p) => [data, ...p]);
+      setSchedForm(null);
+    } catch (e) { alert(e.response?.data?.error || 'Erro'); }
+  }
+  async function cancelScheduled(id) {
+    if (!confirm('Cancelar essa mensagem agendada?')) return;
+    try { await api.delete(`/scheduled/${id}`); setScheduled((p) => p.map((s) => s.id === id ? { ...s, status: 'cancelled' } : s)); }
+    catch {}
   }
 
   if (!conv) return null;
@@ -226,6 +247,76 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
               </p>
             </div>
           ))}
+        </div>
+      </Section>
+
+      {/* Mensagens agendadas */}
+      <Section title="Mensagens agendadas"
+        action={!schedForm && (
+          <button onClick={() => setSchedForm({ body: '', scheduled_for: '', instance_id: instances[0]?.id || '' })}
+            className="text-xs" style={{ color: 'var(--inunda-cyan)' }}>+ agendar</button>
+        )}>
+        {schedForm && (
+          <div className="space-y-2 mb-3 p-2.5 rounded-lg"
+            style={{ background: 'var(--inunda-bg-elevated)', border: '1px solid var(--inunda-border)' }}>
+            <select value={schedForm.instance_id} onChange={(e) => setSchedForm({ ...schedForm, instance_id: e.target.value })}
+              className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
+              <option value="">📦 Enviar pela caixa...</option>
+              {instances.filter((i) => i.status === 'connected').map((i) => (
+                <option key={i.id} value={i.id}>📦 {i.display_name || i.instance_name}</option>
+              ))}
+            </select>
+            <input type="datetime-local" value={schedForm.scheduled_for}
+              onChange={(e) => setSchedForm({ ...schedForm, scheduled_for: e.target.value })}
+              className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+            <textarea rows={3} value={schedForm.body} onChange={(e) => setSchedForm({ ...schedForm, body: e.target.value })}
+              placeholder="Mensagem que será enviada..."
+              className="w-full bg-white/5 border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-cyan-400 resize-none"
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+            <div className="flex gap-1.5">
+              <button onClick={createScheduled} disabled={!schedForm.body.trim() || !schedForm.scheduled_for || !schedForm.instance_id}
+                className="btn-primary text-xs px-3 py-1 rounded-md flex-1 disabled:opacity-40">Agendar</button>
+              <button onClick={() => setSchedForm(null)} className="text-xs px-2" style={{ color: 'var(--inunda-text-muted)' }}>×</button>
+            </div>
+          </div>
+        )}
+        <div className="space-y-1.5">
+          {scheduled.length === 0 && !schedForm && (
+            <p className="text-xs italic" style={{ color: 'var(--inunda-text-faded)' }}>Sem mensagens agendadas</p>
+          )}
+          {scheduled.map((s) => {
+            const when = new Date(s.scheduled_for);
+            const isPast = when < new Date() && s.status === 'pending';
+            return (
+              <div key={s.id} className="px-2 py-1.5 rounded-md text-xs flex items-start gap-2"
+                style={{ background: 'var(--inunda-bg-elevated)', border: '1px solid var(--inunda-border)', opacity: s.status === 'cancelled' ? 0.5 : 1 }}>
+                <div className="flex-1 min-w-0">
+                  <p style={{ color: 'var(--inunda-text)' }} className="line-clamp-2">{s.body}</p>
+                  <p className="text-[10px] mt-0.5" style={{ color: 'var(--inunda-text-faded)' }}>
+                    📦 {s.instance_label || s.instance_name} · {when.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <span className="text-[9px] uppercase font-semibold px-1 py-0.5 rounded flex-shrink-0"
+                  style={{
+                    background: s.status === 'sent' ? 'rgba(34,197,94,0.15)' :
+                                s.status === 'failed' ? 'rgba(239,68,68,0.15)' :
+                                s.status === 'cancelled' ? 'rgba(255,255,255,0.05)' :
+                                isPast ? 'rgba(251,191,36,0.15)' : 'rgba(0,212,232,0.15)',
+                    color: s.status === 'sent' ? '#22c55e' :
+                           s.status === 'failed' ? '#ef4444' :
+                           s.status === 'cancelled' ? 'var(--inunda-text-faded)' :
+                           isPast ? '#fbbf24' : 'var(--inunda-cyan)',
+                  }}>
+                  {s.status === 'pending' ? (isPast ? 'atrasado' : 'agendado') : s.status}
+                </span>
+                {s.status === 'pending' && (
+                  <button onClick={() => cancelScheduled(s.id)} className="text-red-400 text-xs">×</button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </Section>
 
