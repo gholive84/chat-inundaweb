@@ -162,12 +162,18 @@ async function handleIncomingMessage(app, inst, payload) {
     io?.to(`conv:${convId}`).emit('message:new', { conversationId: convId, message: insertedRow });
     io?.to(`company:${inst.company_id}`).emit('conversation:update', { conversationId: convId });
 
-    // Mídia: tenta baixar e subir pro S3 (assincrono, nao bloqueia)
+    // Mídia: Evolution v2 ja manda base64 inline (config base64:true no webhook).
+    // Pega direto do payload — fallback pra getBase64FromMediaMessage se nao vier.
     if (isMedia && await storage.hasS3(inst.company_id).catch(() => false)) {
       setImmediate(async () => {
         try {
-          const b64 = await evolution.getMessageMediaBase64(inst.instance_name, data);
-          if (!b64) return;
+          // Evolution coloca em data.message.base64 (m.base64)
+          let b64 = m?.base64 || data?.message?.base64 || null;
+          if (!b64) {
+            console.log('[media] base64 nao veio inline, tentando getBase64FromMediaMessage');
+            b64 = await evolution.getMessageMediaBase64(inst.instance_name, data);
+          }
+          if (!b64) { console.warn('[media→s3] sem base64'); return; }
           const buf = Buffer.from(b64, 'base64');
           const ext = (mediaMime?.split('/')[1] || 'bin').split(';')[0];
           const fname = mediaFilename || `${type}-${insertedRow.id}.${ext}`;
@@ -177,6 +183,7 @@ async function handleIncomingMessage(app, inst, payload) {
             filename: fname, folder: 'inbound',
           });
           await pool.query('UPDATE messages SET media_url=$1 WHERE id=$2', [up.url, insertedRow.id]);
+          console.log('[media→s3] ok msg', insertedRow.id, '→', up.url);
           io?.to(`conv:${convId}`).emit('message:new', { conversationId: convId });
         } catch (e) { console.warn('[media→s3] falhou:', e.message); }
       });
