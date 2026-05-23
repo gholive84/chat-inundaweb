@@ -19,6 +19,7 @@ const noteRoutes = require('./src/routes/notes');
 const contactRoutes = require('./src/routes/contacts');
 const storageRoutes = require('./src/routes/storage');
 const knowledgeRoutes = require('./src/routes/knowledge');
+const adminRoutes = require('./src/routes/admin');
 
 const initSocket = require('./src/socket');
 
@@ -50,6 +51,7 @@ app.use('/api/notes', noteRoutes);
 app.use('/api/contacts', contactRoutes);
 app.use('/api/storage', storageRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.set('io', io);
 initSocket(io);
@@ -91,6 +93,9 @@ async function runMigrations() {
       UNIQUE (email)
     )
   `);
+
+  // Super admin (controla todas as empresas — operador da plataforma)
+  await safe(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE`);
 
   // ── User memberships em multiplas companies ──────────────────────────
   // Um user pode ser owner de varias empresas. A coluna company_id em users

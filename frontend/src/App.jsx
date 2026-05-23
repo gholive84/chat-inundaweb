@@ -8,6 +8,7 @@ import Crm from './pages/Crm';
 import Contacts from './pages/Contacts';
 import Settings from './pages/Settings';
 import Connect from './pages/Connect';
+import SuperAdmin from './pages/SuperAdmin';
 
 function Guard({ children }) {
   const token = useAuthStore((s) => s.token);
@@ -29,6 +30,7 @@ export default function App() {
         <Route path="contacts" element={<Contacts />} />
         <Route path="settings" element={<Settings />} />
         <Route path="connect" element={<Connect />} />
+        <Route path="admin" element={<SuperAdmin />} />
       </Route>
 
       <Route path="*" element={<Navigate to="/app/chat" replace />} />

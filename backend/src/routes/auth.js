@@ -84,9 +84,9 @@ router.post('/signup', async (req, res) => {
 
     await client.query('COMMIT');
 
-    const token = makeToken({ id: usr[0].id, companyId: company.id, role: usr[0].role, name: usr[0].name, email: usr[0].email, type: 'agent' });
+    const token = makeToken({ id: usr[0].id, companyId: company.id, role: usr[0].role, name: usr[0].name, email: usr[0].email, type: 'agent', isSuperAdmin: false });
     const companies = await loadUserCompanies(usr[0].id);
-    res.status(201).json({ token, user: usr[0], company, companies });
+    res.status(201).json({ token, user: { ...usr[0], is_super_admin: false }, company, companies });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     if (err.code === '23505') return res.status(409).json({ error: 'Email já cadastrado' });
@@ -100,7 +100,7 @@ router.post('/login', async (req, res) => {
     const { email, password } = req.body;
     if (!email || !password) return res.status(400).json({ error: 'Email e senha obrigatórios' });
     const { rows } = await pool.query(
-      `SELECT u.id, u.company_id, u.name, u.email, u.password_hash, u.role, u.active,
+      `SELECT u.id, u.company_id, u.name, u.email, u.password_hash, u.role, u.active, u.is_super_admin,
               c.id AS c_id, c.name AS c_name, c.slug AS c_slug, c.active AS c_active
        FROM users u JOIN companies c ON c.id = u.company_id
        WHERE u.email=$1 AND u.active=TRUE LIMIT 1`,
@@ -114,17 +114,16 @@ router.post('/login', async (req, res) => {
     await pool.query('UPDATE users SET last_seen_at = NOW() WHERE id=$1', [u.id]);
 
     const companies = await loadUserCompanies(u.id);
-    // Defaultcompany: a salva em u.company_id (principal). Se essa nao esta ativa,
-    // pega a primeira disponivel.
     let active = companies.find((c) => c.id === u.company_id) || companies[0];
     if (!active) return res.status(403).json({ error: 'Nenhuma empresa ativa pra este usuário' });
 
     const token = makeToken({
-      id: u.id, companyId: active.id, role: active.role, name: u.name, email: u.email, type: 'agent',
+      id: u.id, companyId: active.id, role: active.role, name: u.name, email: u.email,
+      type: 'agent', isSuperAdmin: !!u.is_super_admin,
     });
     res.json({
       token,
-      user: { id: u.id, name: u.name, email: u.email, role: active.role },
+      user: { id: u.id, name: u.name, email: u.email, role: active.role, is_super_admin: !!u.is_super_admin },
       company: { id: active.id, name: active.name, slug: active.slug },
       companies,
     });
@@ -146,16 +145,22 @@ router.post('/switch-company', authCompany, async (req, res) => {
     const { company_id } = req.body;
     if (!company_id) return res.status(400).json({ error: 'company_id obrigatório' });
     const companies = await loadUserCompanies(req.user.id);
-    const target = companies.find((c) => c.id === parseInt(company_id));
+    let target = companies.find((c) => c.id === parseInt(company_id));
+    // Super admin pode trocar pra qualquer empresa (mesmo sem membership)
+    if (!target && req.user.isSuperAdmin) {
+      const { rows } = await pool.query('SELECT id, slug, name FROM companies WHERE id=$1', [company_id]);
+      if (rows.length) target = { ...rows[0], role: 'owner' };
+    }
     if (!target) return res.status(403).json({ error: 'Você não tem acesso a essa empresa' });
     const token = makeToken({
       id: req.user.id, companyId: target.id, role: target.role,
       name: req.user.name, email: req.user.email, type: 'agent',
+      isSuperAdmin: !!req.user.isSuperAdmin,
     });
     res.json({
       token,
       company: { id: target.id, name: target.name, slug: target.slug },
-      user: { id: req.user.id, name: req.user.name, email: req.user.email, role: target.role },
+      user: { id: req.user.id, name: req.user.name, email: req.user.email, role: target.role, is_super_admin: !!req.user.isSuperAdmin },
       companies,
     });
   } catch (err) {

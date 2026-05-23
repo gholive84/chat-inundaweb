@@ -48,6 +48,13 @@ export default function AppShell() {
               <path d="M21 11.5a8.38 8.38 0 0 1-9 8.5 8.5 8.5 0 0 1-7-3.5L3 21l4.5-2A8.5 8.5 0 1 1 21 11.5z"/>
             </svg>
           </NavIcon>
+          {user?.is_super_admin && (
+            <NavIcon to="/app/admin" label="Super Admin">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+              </svg>
+            </NavIcon>
+          )}
           <NavIcon to="/app/settings" label="Config">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="3"/>

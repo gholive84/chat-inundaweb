@@ -23,4 +23,12 @@ function authRole(...roles) {
   };
 }
 
-module.exports = { authCompany, authRole };
+function authSuperAdmin(req, res, next) {
+  const u = decode(req);
+  if (!u || u.type !== 'agent') return res.status(401).json({ error: 'Não autorizado' });
+  if (!u.isSuperAdmin) return res.status(403).json({ error: 'Apenas super admin' });
+  req.user = u;
+  next();
+}
+
+module.exports = { authCompany, authRole, authSuperAdmin };
