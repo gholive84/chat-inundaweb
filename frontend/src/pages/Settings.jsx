@@ -1,117 +1,378 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
+import useAuthStore from '../store/authStore';
 
-export default function Settings() {
+const TABS = [
+  { id: 'ai',         label: 'IA',           icon: '🤖' },
+  { id: 'knowledge',  label: 'Conhecimento', icon: '📚' },
+  { id: 'agents',     label: 'Atendentes',   icon: '👥' },
+  { id: 'storage',    label: 'Armazenamento',icon: '🗄' },
+];
+
+function Notice({ type = 'info', children }) {
+  const styles = {
+    info:    { bg: 'rgba(0,212,232,0.08)',  border: 'rgba(0,212,232,0.35)', color: '#7dd3fc' },
+    error:   { bg: 'rgba(239,68,68,0.08)',  border: 'rgba(239,68,68,0.35)', color: '#fca5a5' },
+    success: { bg: 'rgba(34,197,94,0.08)',  border: 'rgba(34,197,94,0.35)', color: '#86efac' },
+  }[type];
+  return (
+    <div className="px-3 py-2 rounded-lg text-xs border mb-3"
+      style={{ background: styles.bg, borderColor: styles.border, color: styles.color }}>{children}</div>
+  );
+}
+
+// ─── Tab IA ────────────────────────────────────────────────────────
+function TabAI() {
   const [config, setConfig] = useState(null);
-  const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [okMsg, setOkMsg] = useState('');
-
-  useEffect(() => {
-    api.get('/ai/config').then((r) => setConfig(r.data)).catch(() => {});
-  }, []);
-
+  const [ok, setOk] = useState(''); const [err, setErr] = useState('');
+  useEffect(() => { api.get('/ai/config').then((r) => setConfig(r.data)).catch(() => {}); }, []);
+  if (!config) return <p className="text-sm text-white/50">Carregando…</p>;
+  const set = (p) => setConfig({ ...config, ...p });
   async function save() {
-    setError(''); setOkMsg(''); setSaving(true);
-    try {
-      await api.put('/ai/config', config);
-      setOkMsg('Salvo');
-      setTimeout(() => setOkMsg(''), 2000);
-    } catch (err) {
-      setError(err.response?.data?.error || 'Erro ao salvar');
-    } finally { setSaving(false); }
+    setErr(''); setOk(''); setSaving(true);
+    try { await api.put('/ai/config', config); setOk('Salvo'); setTimeout(() => setOk(''), 2000); }
+    catch (e) { setErr(e.response?.data?.error || 'Erro'); }
+    finally { setSaving(false); }
+  }
+  return (
+    <div className="space-y-4 max-w-2xl">
+      {err && <Notice type="error">{err}</Notice>}
+      {ok && <Notice type="success">{ok}</Notice>}
+      <label className="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" checked={!!config.enabled} onChange={(e) => set({ enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
+        <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>Habilitar resposta automática por IA</span>
+      </label>
+      <Field label="Provider">
+        <select value={config.provider} onChange={(e) => set({ provider: e.target.value })} className={inputCls}>
+          <option value="none">— Nenhum —</option>
+          <option value="openai">OpenAI</option>
+          <option value="anthropic">Anthropic</option>
+        </select>
+      </Field>
+      <Field label={`API Key${config.has_key ? ' (já configurada — deixe vazio pra manter)' : ''}`}>
+        <input type="password" placeholder="sk-..." value={config.api_key || ''}
+          onChange={(e) => set({ api_key: e.target.value })}
+          className={`${inputCls} font-mono-inunda`} />
+      </Field>
+      <Field label="Modelo">
+        <input placeholder={config.provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini'}
+          value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
+          className={`${inputCls} font-mono-inunda`} />
+      </Field>
+      <Field label="System prompt">
+        <textarea rows={5} placeholder="Voce e atendente da..."
+          value={config.system_prompt || ''} onChange={(e) => set({ system_prompt: e.target.value })}
+          className={`${inputCls} resize-y`} />
+      </Field>
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="Pausa (s)"><input type="number" value={config.pause_seconds ?? 600} onChange={(e) => set({ pause_seconds: parseInt(e.target.value || '0') })} className={inputCls} /></Field>
+        <Field label="Max tokens"><input type="number" value={config.max_tokens ?? 1024} onChange={(e) => set({ max_tokens: parseInt(e.target.value || '1024') })} className={inputCls} /></Field>
+        <Field label="Temperature"><input type="number" step="0.1" value={config.temperature ?? 0.7} onChange={(e) => set({ temperature: parseFloat(e.target.value || '0.7') })} className={inputCls} /></Field>
+      </div>
+      <button onClick={save} disabled={saving} className={btnPrimary}>{saving ? 'Salvando…' : 'Salvar'}</button>
+    </div>
+  );
+}
+
+// ─── Tab Knowledge ─────────────────────────────────────────────────
+function TabKnowledge() {
+  const [items, setItems] = useState([]);
+  const [url, setUrl] = useState('');
+  const [text, setText] = useState({ title: '', content: '' });
+  const [err, setErr] = useState('');
+  function load() { api.get('/knowledge').then((r) => setItems(r.data)).catch(() => {}); }
+  useEffect(load, []);
+
+  async function uploadFile(f) {
+    if (!f) return;
+    setErr('');
+    const form = new FormData(); form.append('file', f);
+    try { await api.post('/knowledge/file', form, { headers: { 'Content-Type': 'multipart/form-data' } }); load(); }
+    catch (e) { setErr(e.response?.data?.error || 'Erro ao subir'); }
+  }
+  async function addUrl() {
+    if (!url.trim()) return;
+    setErr('');
+    try { await api.post('/knowledge/url', { url, title: url }); setUrl(''); load(); }
+    catch (e) { setErr(e.response?.data?.error || 'Erro'); }
+  }
+  async function addText() {
+    if (!text.title || !text.content) return;
+    setErr('');
+    try { await api.post('/knowledge/text', text); setText({ title: '', content: '' }); load(); }
+    catch (e) { setErr(e.response?.data?.error || 'Erro'); }
+  }
+  async function del(id) {
+    if (!confirm('Remover?')) return;
+    try { await api.delete(`/knowledge/${id}`); load(); } catch {}
   }
 
-  if (!config) return <div className="p-8 text-sm" style={{ color: 'var(--inunda-text-muted)' }}>Carregando…</div>;
+  return (
+    <div className="space-y-5 max-w-2xl">
+      <Notice type="info">
+        Os itens abaixo são injetados no prompt da IA. Ela usa como base ao responder o cliente.
+        MVP: suporta arquivos .txt / .md / .csv / .json, URLs públicas e texto livre.
+      </Notice>
+      {err && <Notice type="error">{err}</Notice>}
 
-  const set = (patch) => setConfig({ ...config, ...patch });
+      <div className="rounded-xl border p-4 space-y-3"
+        style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+        <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>📎 Arquivo</p>
+        <input type="file" accept=".txt,.md,.csv,.json,text/*"
+          onChange={(e) => { uploadFile(e.target.files?.[0]); e.target.value = ''; }}
+          className="text-sm" style={{ color: 'var(--inunda-text)' }} />
+      </div>
+
+      <div className="rounded-xl border p-4 space-y-3"
+        style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+        <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>🔗 URL</p>
+        <div className="flex gap-2">
+          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://..."
+            className={`${inputCls} flex-1`} />
+          <button onClick={addUrl} disabled={!url.trim()} className={btnPrimary}>+ Adicionar</button>
+        </div>
+      </div>
+
+      <div className="rounded-xl border p-4 space-y-3"
+        style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+        <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>📝 Texto livre</p>
+        <input value={text.title} onChange={(e) => setText({ ...text, title: e.target.value })}
+          placeholder="Título (ex: FAQ produto X)" className={inputCls} />
+        <textarea rows={4} value={text.content} onChange={(e) => setText({ ...text, content: e.target.value })}
+          placeholder="Cole aqui o conteúdo..." className={`${inputCls} resize-y`} />
+        <button onClick={addText} disabled={!text.title || !text.content} className={btnPrimary}>+ Adicionar</button>
+      </div>
+
+      <div className="space-y-2">
+        {items.length === 0 && <p className="text-sm italic" style={{ color: 'var(--inunda-text-faded)' }}>Nenhum item ainda</p>}
+        {items.map((it) => (
+          <div key={it.id} className="rounded-lg border p-3 flex items-start gap-3"
+            style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+            <span>{it.kind === 'file' ? '📎' : it.kind === 'url' ? '🔗' : '📝'}</span>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{it.title}</p>
+              {it.source && <p className="text-[11px] truncate font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{it.source}</p>}
+              <p className="text-xs truncate mt-1" style={{ color: 'var(--inunda-text-muted)' }}>{it.preview}…</p>
+            </div>
+            <button onClick={() => del(it.id)} className="text-red-400 text-xs hover:text-red-600">×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab Atendentes ────────────────────────────────────────────────
+function TabAgents() {
+  const { user: me } = useAuthStore();
+  const [agents, setAgents] = useState([]);
+  const [form, setForm] = useState({ name: '', email: '', password: '', role: 'agent' });
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [err, setErr] = useState('');
+  function load() { api.get('/companies/agents').then((r) => setAgents(r.data)).catch(() => {}); }
+  useEffect(load, []);
+
+  async function save() {
+    setErr('');
+    try {
+      if (editing) {
+        const payload = { ...form, active: editing.active };
+        if (!form.password) delete payload.password;
+        await api.put(`/companies/agents/${editing.id}`, payload);
+      } else {
+        await api.post('/companies/agents', form);
+      }
+      setForm({ name: '', email: '', password: '', role: 'agent' });
+      setShowForm(false); setEditing(null);
+      load();
+    } catch (e) { setErr(e.response?.data?.error || 'Erro'); }
+  }
+  async function toggleActive(a) {
+    try { await api.put(`/companies/agents/${a.id}`, { name: a.name, email: a.email, role: a.role, active: !a.active }); load(); }
+    catch (e) { alert(e.response?.data?.error || 'Erro'); }
+  }
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <p className="text-sm" style={{ color: 'var(--inunda-text-muted)' }}>
+          {agents.filter((a) => a.active).length} ativo{agents.filter((a) => a.active).length !== 1 ? 's' : ''} · {agents.length} total
+        </p>
+        <button onClick={() => { setShowForm(true); setEditing(null); setForm({ name: '', email: '', password: '', role: 'agent' }); setErr(''); }}
+          className={btnPrimary}>+ Novo atendente</button>
+      </div>
+
+      {err && <Notice type="error">{err}</Notice>}
+
+      {showForm && (
+        <div className="rounded-xl border p-4 space-y-3"
+          style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+          <p className="font-semibold text-sm" style={{ color: 'var(--inunda-text)' }}>{editing ? 'Editar atendente' : 'Novo atendente'}</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Nome"><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className={inputCls} /></Field>
+            <Field label="Email"><input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className={inputCls} /></Field>
+            <Field label={`Senha${editing ? ' (vazio = manter)' : ''}`}>
+              <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className={inputCls} />
+            </Field>
+            <Field label="Papel">
+              <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className={inputCls}>
+                <option value="agent">Agente</option>
+                <option value="owner">Owner (admin)</option>
+                <option value="viewer">Viewer (só leitura)</option>
+              </select>
+            </Field>
+          </div>
+          <div className="flex gap-2">
+            <button onClick={save} className={btnPrimary}>{editing ? 'Salvar' : 'Criar'}</button>
+            <button onClick={() => { setShowForm(false); setEditing(null); }}
+              className="text-sm px-3 py-2" style={{ color: 'var(--inunda-text-muted)' }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {agents.map((a) => (
+          <div key={a.id} className="rounded-lg border p-3 flex items-center gap-3"
+            style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)', opacity: a.active ? 1 : 0.55 }}>
+            <div className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-semibold"
+              style={{ background: 'var(--inunda-cyan-faint)', color: 'var(--inunda-cyan)' }}>
+              {a.name?.[0]?.toUpperCase() || '?'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>{a.name}</p>
+                {me?.id === a.id && <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded"
+                  style={{ background: 'var(--inunda-cyan-faint)', color: 'var(--inunda-cyan)' }}>você</span>}
+                <span className="text-[10px] uppercase font-semibold px-1.5 py-0.5 rounded"
+                  style={{ background: a.role === 'owner' ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.05)',
+                           color: a.role === 'owner' ? '#c084fc' : 'var(--inunda-text-muted)' }}>{a.role}</span>
+                {!a.active && <span className="text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded"
+                  style={{ background: 'rgba(239,68,68,0.15)', color: '#fca5a5' }}>inativo</span>}
+              </div>
+              <p className="text-xs truncate" style={{ color: 'var(--inunda-text-muted)' }}>{a.email}</p>
+            </div>
+            <button onClick={() => { setEditing(a); setForm({ name: a.name, email: a.email, password: '', role: a.role }); setShowForm(true); setErr(''); }}
+              className="text-xs px-3 py-1.5 rounded-md" style={{ color: 'var(--inunda-cyan)' }}>Editar</button>
+            {me?.id !== a.id && (
+              <button onClick={() => toggleActive(a)}
+                className="text-xs px-3 py-1.5 rounded-md"
+                style={{ color: a.active ? '#ef4444' : '#22c55e' }}>
+                {a.active ? 'Desativar' : 'Ativar'}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab Storage (S3) ──────────────────────────────────────────────
+function TabStorage() {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [ok, setOk] = useState(''); const [err, setErr] = useState('');
+  useEffect(() => { api.get('/storage').then((r) => setCfg(r.data)).catch(() => {}); }, []);
+  if (!cfg) return <p className="text-sm text-white/50">Carregando…</p>;
+  const set = (p) => setCfg({ ...cfg, ...p });
+  async function save() {
+    setErr(''); setOk(''); setSaving(true);
+    try { await api.put('/storage', cfg); setOk('Salvo'); setTimeout(() => setOk(''), 2000); }
+    catch (e) { setErr(e.response?.data?.error || 'Erro'); }
+    finally { setSaving(false); }
+  }
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <Notice type="info">
+        Por padrão arquivos enviados ficam no disco do container (perdidos em redeploy).
+        Configurando S3 (ou compatível MinIO/R2/B2), os anexos do chat ficam persistentes.
+      </Notice>
+      {err && <Notice type="error">{err}</Notice>}
+      {ok && <Notice type="success">{ok}</Notice>}
+      <Field label="Provider">
+        <select value={cfg.provider} onChange={(e) => set({ provider: e.target.value })} className={inputCls}>
+          <option value="local">Local (disco do container)</option>
+          <option value="s3">S3 (AWS / MinIO / R2 / B2)</option>
+        </select>
+      </Field>
+      {cfg.provider === 's3' && (
+        <>
+          <Field label="Endpoint (opcional — só pra MinIO/R2/B2)">
+            <input value={cfg.endpoint || ''} onChange={(e) => set({ endpoint: e.target.value })}
+              placeholder="https://s3.us-east-1.amazonaws.com" className={`${inputCls} font-mono-inunda`} />
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Region"><input value={cfg.region || ''} onChange={(e) => set({ region: e.target.value })} placeholder="us-east-1" className={inputCls} /></Field>
+            <Field label="Bucket"><input value={cfg.bucket || ''} onChange={(e) => set({ bucket: e.target.value })} placeholder="meu-bucket" className={inputCls} /></Field>
+          </div>
+          <Field label={`Access Key${cfg.has_key ? ' (já configurada — deixe vazio pra manter)' : ''}`}>
+            <input type="password" value={cfg.access_key || ''} onChange={(e) => set({ access_key: e.target.value })}
+              placeholder="AKIA…" className={`${inputCls} font-mono-inunda`} />
+          </Field>
+          <Field label={`Secret Key${cfg.has_secret ? ' (já configurada — deixe vazio pra manter)' : ''}`}>
+            <input type="password" value={cfg.secret_key || ''} onChange={(e) => set({ secret_key: e.target.value })}
+              className={`${inputCls} font-mono-inunda`} />
+          </Field>
+          <Field label="URL pública (opcional — pra CDN)">
+            <input value={cfg.public_url || ''} onChange={(e) => set({ public_url: e.target.value })}
+              placeholder="https://cdn.exemplo.com" className={inputCls} />
+          </Field>
+        </>
+      )}
+      <button onClick={save} disabled={saving} className={btnPrimary}>{saving ? 'Salvando…' : 'Salvar'}</button>
+    </div>
+  );
+}
+
+// ─── Helpers ───────────────────────────────────────────────────────
+const inputCls = "w-full bg-white/5 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-400";
+const btnPrimary = "btn-primary px-4 py-2 rounded-lg text-sm disabled:opacity-50";
+
+function Field({ label, children }) {
+  return (
+    <div>
+      <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>
+        {label}
+      </label>
+      {children}
+    </div>
+  );
+}
+
+// ─── Page ──────────────────────────────────────────────────────────
+export default function Settings() {
+  const [tab, setTab] = useState(() => {
+    try { return localStorage.getItem('settings_tab') || 'ai'; } catch { return 'ai'; }
+  });
+  useEffect(() => { try { localStorage.setItem('settings_tab', tab); } catch {} }, [tab]);
 
   return (
-    <div className="h-full overflow-y-auto p-6 md:p-10">
-      <div className="max-w-2xl mx-auto">
-        <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--inunda-text)' }}>Configurações de IA</h1>
-        <p className="text-sm mb-6" style={{ color: 'var(--inunda-text-muted)' }}>
-          Configure o atendente automático para responder mensagens quando nenhum agente humano estiver disponível.
-        </p>
+    <div className="h-full overflow-y-auto">
+      <div className="max-w-3xl mx-auto p-6 md:p-10">
+        <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--inunda-text)' }}>Configurações</h1>
+        <p className="text-sm mb-5" style={{ color: 'var(--inunda-text-muted)' }}>Ajustes da sua empresa</p>
 
-        {error && <div className="mb-4 px-4 py-3 rounded-xl text-sm border" style={{ color: '#fca5a5', borderColor: 'rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.08)' }}>{error}</div>}
-        {okMsg && <div className="mb-4 px-4 py-3 rounded-xl text-sm border" style={{ color: '#86efac', borderColor: 'rgba(34,197,94,0.35)', background: 'rgba(34,197,94,0.08)' }}>{okMsg}</div>}
-
-        <div className="rounded-2xl border p-5 space-y-4"
-          style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
-
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input type="checkbox" checked={!!config.enabled} onChange={(e) => set({ enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
-            <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>Habilitar resposta automática por IA</span>
-          </label>
-
-          <div>
-            <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>Provider</label>
-            <select value={config.provider} onChange={(e) => set({ provider: e.target.value })}
-              className="w-full bg-white/5 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-cyan-400"
-              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
-              <option value="none">— Nenhum —</option>
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>
-              API Key {config.has_key && <span className="text-cyan-400 normal-case">(já configurada — deixe vazio pra manter)</span>}
-            </label>
-            <input type="password" placeholder="sk-..." value={config.api_key || ''}
-              onChange={(e) => set({ api_key: e.target.value })}
-              className="w-full bg-white/5 border rounded-xl px-3 py-2 text-sm font-mono-inunda focus:outline-none focus:border-cyan-400"
-              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
-          </div>
-
-          <div>
-            <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>Modelo</label>
-            <input placeholder={config.provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini'}
-              value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
-              className="w-full bg-white/5 border rounded-xl px-3 py-2 text-sm font-mono-inunda focus:outline-none focus:border-cyan-400"
-              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
-          </div>
-
-          <div>
-            <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>System prompt</label>
-            <textarea rows={4} placeholder="Você é uma atendente da [empresa] que…"
-              value={config.system_prompt || ''} onChange={(e) => set({ system_prompt: e.target.value })}
-              className="w-full bg-white/5 border rounded-xl px-3 py-2 text-sm resize-y focus:outline-none focus:border-cyan-400"
-              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
-          </div>
-
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>Pausa ao agente digitar (s)</label>
-              <input type="number" min={0} value={config.pause_seconds ?? 600}
-                onChange={(e) => set({ pause_seconds: parseInt(e.target.value || '0') })}
-                className="w-full bg-white/5 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-cyan-400"
-                style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>Max tokens</label>
-              <input type="number" min={64} value={config.max_tokens ?? 1024}
-                onChange={(e) => set({ max_tokens: parseInt(e.target.value || '1024') })}
-                className="w-full bg-white/5 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-cyan-400"
-                style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider font-semibold mb-1.5 block" style={{ color: 'var(--inunda-text-faded)' }}>Temperature</label>
-              <input type="number" step="0.1" min={0} max={2} value={config.temperature ?? 0.7}
-                onChange={(e) => set({ temperature: parseFloat(e.target.value || '0.7') })}
-                className="w-full bg-white/5 border rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-cyan-400"
-                style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
-            </div>
-          </div>
-
-          <button onClick={save} disabled={saving}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
-            style={{ background: 'var(--inunda-cyan)', color: 'var(--inunda-bg-deep)' }}>
-            {saving ? 'Salvando…' : 'Salvar configurações'}
-          </button>
+        <div className="flex gap-1 border-b mb-5 -mx-2 px-2 overflow-x-auto"
+          style={{ borderColor: 'var(--inunda-border)' }}>
+          {TABS.map((t) => (
+            <button key={t.id} onClick={() => setTab(t.id)}
+              className="px-3 py-2 text-sm flex items-center gap-1.5 border-b-2 transition-colors whitespace-nowrap"
+              style={{
+                color: tab === t.id ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+                borderColor: tab === t.id ? 'var(--inunda-cyan)' : 'transparent',
+              }}>
+              <span>{t.icon}</span>
+              <span className="font-medium">{t.label}</span>
+            </button>
+          ))}
         </div>
+
+        {/* Cada tab é renderizada inteira (não keep-mount pra simplicidade) */}
+        {tab === 'ai'        && <TabAI />}
+        {tab === 'knowledge' && <TabKnowledge />}
+        {tab === 'agents'    && <TabAgents />}
+        {tab === 'storage'   && <TabStorage />}
       </div>
     </div>
   );

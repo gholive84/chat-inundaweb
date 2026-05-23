@@ -170,11 +170,12 @@ export default function Crm() {
                           return (
                             <Draggable key={c.id} draggableId={String(c.id)} index={index}>
                               {(provided, snapshot) => (
-                                <div ref={provided.innerRef} {...provided.draggableProps} {...provided.dragHandleProps}
-                                  className={`rounded-lg p-3 cursor-pointer transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-1 ring-cyan-400' : 'hover:bg-white/[0.04]'}`}
-                                  style={{ background: 'var(--inunda-bg-deep)', border: '1px solid var(--inunda-border)' }}
-                                  onClick={() => cv && navigate(`/app/chat/${cv.id}`)}>
-                                  <div className="flex items-center gap-2 mb-1">
+                                <div ref={provided.innerRef} {...provided.draggableProps}
+                                  className={`rounded-lg transition-shadow ${snapshot.isDragging ? 'shadow-lg ring-1 ring-cyan-400' : 'hover:bg-white/[0.04]'}`}
+                                  style={{ background: 'var(--inunda-bg-deep)', border: '1px solid var(--inunda-border)' }}>
+                                  {/* Drag handle visivel: cabecalho do card */}
+                                  <div {...provided.dragHandleProps}
+                                    className="flex items-center gap-2 px-3 pt-2.5 pb-1.5 cursor-grab active:cursor-grabbing">
                                     {c.profile_pic_url ? (
                                       <img src={c.profile_pic_url} className="w-7 h-7 rounded-full object-cover" />
                                     ) : (
@@ -184,13 +185,29 @@ export default function Crm() {
                                       </div>
                                     )}
                                     <p className="text-sm font-medium truncate flex-1" style={{ color: 'var(--inunda-text)' }}>{name}</p>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="opacity-30 flex-shrink-0"
+                                      style={{ color: 'var(--inunda-text-faded)' }}>
+                                      <circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>
+                                      <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+                                      <circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
+                                    </svg>
                                   </div>
-                                  <p className="text-[11px] font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{c.phone}</p>
-                                  {cv?.last_message_preview && (
-                                    <p className="text-xs truncate mt-1" style={{ color: 'var(--inunda-text-muted)' }}>
-                                      {cv.last_message_preview}
-                                    </p>
-                                  )}
+                                  {/* Area clicavel (separada do handle): abre a conversa */}
+                                  <button onClick={() => cv && navigate(`/app/chat/${cv.id}`)}
+                                    disabled={!cv}
+                                    className="w-full text-left px-3 pb-2.5 disabled:opacity-50">
+                                    <p className="text-[11px] font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{c.phone}</p>
+                                    {cv?.last_message_preview && (
+                                      <p className="text-xs truncate mt-1" style={{ color: 'var(--inunda-text-muted)' }}>
+                                        {cv.last_message_preview}
+                                      </p>
+                                    )}
+                                    {!cv && (
+                                      <p className="text-[10px] italic mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                                        sem conversa ainda
+                                      </p>
+                                    )}
+                                  </button>
                                 </div>
                               )}
                             </Draggable>

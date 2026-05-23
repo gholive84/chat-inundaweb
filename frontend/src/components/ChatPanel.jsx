@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react';
 import api from '../services/api';
 import useSocketStore from '../store/socketStore';
 import useAutoScroll from '../hooks/useAutoScroll';
@@ -77,9 +78,24 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [aiToggling, setAiToggling] = useState(false);
+  const [emojiOpen, setEmojiOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
   const socket = useSocketStore((s) => s.socket) || useSocketStore.getState().connect();
   const typingTimer = useRef(null);
   const bottomRef = useAutoScroll([messages.length], conversationId);
+
+  // Close emoji on click outside
+  useEffect(() => {
+    if (!emojiOpen) return;
+    const onClick = (e) => {
+      if (e.target.closest('.emoji-picker-wrap') || e.target.closest('[data-emoji-toggle]')) return;
+      setEmojiOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
+  }, [emojiOpen]);
 
   // Carrega conversa + mensagens; junta na sala via socket
   useEffect(() => {
@@ -141,6 +157,46 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
 
   function handleKey(e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(e); }
+  }
+
+  function insertEmoji(emoji) {
+    const ta = textareaRef.current;
+    const pos = ta?.selectionStart ?? text.length;
+    const next = text.slice(0, pos) + emoji + text.slice(pos);
+    setText(next);
+    setTimeout(() => { ta?.focus(); ta?.setSelectionRange(pos + emoji.length, pos + emoji.length); }, 0);
+  }
+
+  async function sendFile(file, caption = '') {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) { alert('Arquivo > 25MB'); return; }
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      if (caption) form.append('caption', caption);
+      await api.post(`/messages/${conversationId}/media`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const r = await api.get(`/messages/${conversationId}`);
+      setMessages(r.data);
+    } catch (err) {
+      alert(err.response?.data?.error || 'Falha ao enviar arquivo');
+    } finally { setUploading(false); }
+  }
+
+  function onPaste(e) {
+    const item = Array.from(e.clipboardData?.items || []).find((i) => i.type.startsWith('image/'));
+    if (item) {
+      e.preventDefault();
+      const blob = item.getAsFile();
+      if (blob) {
+        const ext = blob.type.split('/')[1] || 'png';
+        const named = new File([blob], `paste-${Date.now()}.${ext}`, { type: blob.type });
+        sendFile(named, text);
+        setText('');
+      }
+    }
   }
 
   async function toggleAI() {
@@ -258,16 +314,57 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
       )}
 
       {/* Input */}
-      <form onSubmit={send} className="px-3 py-3 border-t flex items-end gap-2"
+      <form onSubmit={send} className="px-3 py-3 border-t flex items-end gap-1.5 relative"
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
+        {/* Emoji */}
+        <button type="button" data-emoji-toggle
+          onClick={() => setEmojiOpen((v) => !v)}
+          title="Emoji"
+          className="w-10 h-10 rounded-full flex items-center justify-center text-lg hover:bg-white/[0.06] transition-colors"
+          style={{ color: 'var(--inunda-text-muted)' }}>
+          😀
+        </button>
+        {emojiOpen && (
+          <div className="emoji-picker-wrap absolute bottom-16 left-2 z-30 shadow-2xl rounded-lg overflow-hidden">
+            <EmojiPicker
+              onEmojiClick={(e) => { insertEmoji(e.emoji); }}
+              theme={Theme.DARK}
+              emojiStyle={EmojiStyle.NATIVE}
+              width={320}
+              height={400}
+              skinTonesDisabled
+              previewConfig={{ showPreview: false }}
+            />
+          </div>
+        )}
+
+        {/* Anexar arquivo */}
+        <button type="button" onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          title="Anexar arquivo (imagem, vídeo, documento)"
+          className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06] transition-colors disabled:opacity-40"
+          style={{ color: 'var(--inunda-text-muted)' }}>
+          {uploading ? '⏳' : (
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+            </svg>
+          )}
+        </button>
+        <input ref={fileInputRef} type="file" className="hidden"
+          accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+          onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f, text); e.target.value = ''; setText(''); }} />
+
         <textarea
+          ref={textareaRef}
           rows={1}
           value={text}
           onChange={(e) => onTyping(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Mensagem... (Shift+Enter quebra linha)"
+          onPaste={onPaste}
+          placeholder="Mensagem... (Shift+Enter linha · Ctrl+V cola imagem)"
           className="flex-1 bg-white/5 border rounded-2xl px-4 py-2 text-sm resize-none max-h-32 focus:outline-none focus:border-cyan-400"
           style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+
         <button type="submit" disabled={!text.trim() || sending}
           className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-40"
           style={{ background: 'var(--inunda-cyan)', color: 'var(--inunda-bg-deep)' }}>

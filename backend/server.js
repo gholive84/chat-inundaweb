@@ -17,6 +17,8 @@ const crmRoutes = require('./src/routes/crm');
 const tagRoutes = require('./src/routes/tags');
 const noteRoutes = require('./src/routes/notes');
 const contactRoutes = require('./src/routes/contacts');
+const storageRoutes = require('./src/routes/storage');
+const knowledgeRoutes = require('./src/routes/knowledge');
 
 const initSocket = require('./src/socket');
 
@@ -46,6 +48,8 @@ app.use('/api/crm', crmRoutes);
 app.use('/api/tags', tagRoutes);
 app.use('/api/notes', noteRoutes);
 app.use('/api/contacts', contactRoutes);
+app.use('/api/storage', storageRoutes);
+app.use('/api/knowledge', knowledgeRoutes);
 
 app.set('io', io);
 initSocket(io);
@@ -249,6 +253,38 @@ async function runMigrations() {
       UNIQUE (company_id, provider)
     )
   `);
+
+  // ── Storage config (S3, local, etc) ──────────────────────────────────
+  await safe(`
+    CREATE TABLE IF NOT EXISTS storage_configs (
+      company_id   INTEGER PRIMARY KEY REFERENCES companies(id) ON DELETE CASCADE,
+      provider     VARCHAR(20) DEFAULT 'local',  -- local | s3
+      endpoint     TEXT,
+      region       VARCHAR(50),
+      bucket       VARCHAR(255),
+      access_key   TEXT,
+      secret_key   TEXT,
+      public_url   TEXT,
+      updated_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // ── AI Knowledge base (arquivos e URLs) ──────────────────────────────
+  await safe(`
+    CREATE TABLE IF NOT EXISTS ai_knowledge (
+      id          SERIAL PRIMARY KEY,
+      company_id  INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      kind        VARCHAR(20) NOT NULL,   -- file | url | text
+      title       VARCHAR(255) NOT NULL,
+      source      TEXT,                    -- url ou filename
+      mime        VARCHAR(100),
+      size_bytes  INTEGER,
+      content     TEXT,                    -- texto extraido pra context
+      created_by  INTEGER REFERENCES users(id),
+      created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_ai_knowledge_company ON ai_knowledge(company_id)`);
 
   console.log('✅ Migrations done');
 }

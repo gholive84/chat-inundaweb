@@ -56,6 +56,40 @@ body {
   color: var(--inunda-cyan);
 }
 
+/* Selects e options no tema dark — força background e cor pra não ficar branco no branco */
+.theme-inunda[data-mode="dark"] select {
+  background-color: var(--inunda-bg-elevated) !important;
+  color: var(--inunda-text);
+  color-scheme: dark;
+}
+.theme-inunda[data-mode="dark"] select option {
+  background-color: var(--inunda-bg-elevated);
+  color: var(--inunda-text);
+}
+.theme-inunda[data-mode="dark"] input[type="date"],
+.theme-inunda[data-mode="dark"] input[type="time"],
+.theme-inunda[data-mode="dark"] input[type="datetime-local"] {
+  color-scheme: dark;
+}
+/* Inputs/textarea no tema dark com background escuro */
+.theme-inunda[data-mode="dark"] input::placeholder,
+.theme-inunda[data-mode="dark"] textarea::placeholder {
+  color: var(--inunda-text-faded);
+  opacity: 0.7;
+}
+
+/* Cursor pra drag-and-drop kanban */
+[data-rfd-draggable-id] { cursor: grab; }
+[data-rfd-draggable-id]:active { cursor: grabbing; }
+
+/* Botão primário reutilizável */
+.btn-primary {
+  background: var(--inunda-cyan);
+  color: var(--inunda-bg-deep);
+  font-weight: 600;
+}
+.btn-primary:disabled { opacity: 0.5; }
+
 /* Scrollbar discreta */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

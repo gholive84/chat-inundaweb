@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import api from '../services/api';
+import MentionInput from './MentionInput';
 
 function Section({ title, action, children }) {
   return (
@@ -196,14 +197,16 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
       {/* Notas internas */}
       <Section title="Notas internas">
         <div className="space-y-2">
-          <div className="flex gap-1.5">
-            <input value={newNote} onChange={(e) => setNewNote(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') addNote(); }}
-              placeholder="Adicionar nota..."
-              className="flex-1 bg-white/5 border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-cyan-400"
-              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+          <div className="flex gap-1.5 items-start">
+            <div className="flex-1">
+              <MentionInput as="textarea" rows={2} value={newNote} onChange={setNewNote}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addNote(); } }}
+                placeholder="Nota... @ menciona agente"
+                className="w-full bg-white/5 border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-cyan-400 resize-none"
+                style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+            </div>
             <button onClick={addNote} disabled={!newNote.trim()}
-              className="text-xs px-2 rounded-lg disabled:opacity-40"
+              className="text-xs px-2 py-1.5 rounded-lg disabled:opacity-40"
               style={{ background: 'var(--inunda-cyan-faint)', color: 'var(--inunda-cyan)' }}>
               +
             </button>

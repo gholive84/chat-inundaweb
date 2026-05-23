@@ -37,6 +37,17 @@ async function maybeRespond({ conversationId, app }) {
     if (!adapter) return { skipped: `unknown provider ${C.provider}` };
     if (!C.api_key) return { skipped: 'no api_key' };
 
+    // 1.5) Carrega knowledge base da company pra injetar no system prompt
+    const { rows: kb } = await pool.query(
+      `SELECT title, content FROM ai_knowledge WHERE company_id=$1 ORDER BY created_at ASC LIMIT 20`,
+      [C.company_id]
+    );
+    let systemPrompt = C.system_prompt || 'Voce e um atendente automatico. Seja cordial e breve.';
+    if (kb.length > 0) {
+      const kbText = kb.map((k) => `### ${k.title}\n${k.content}`).join('\n\n---\n\n');
+      systemPrompt += `\n\n# Base de conhecimento (use como referencia ao responder):\n\n${kbText}`;
+    }
+
     // 2) Carrega historico das ultimas N msgs (ordenado crescente)
     const { rows: msgs } = await pool.query(`
       SELECT from_me, author_type, body, type
@@ -55,7 +66,7 @@ async function maybeRespond({ conversationId, app }) {
     const reply = await adapter.chat({
       apiKey:        C.api_key,
       model:         C.model || 'gpt-4o-mini',
-      systemPrompt:  C.system_prompt || 'Voce e um atendente automatico. Seja cordial e breve.',
+      systemPrompt:  systemPrompt,
       messages:      history,
       maxTokens:     C.max_tokens || 1024,
       temperature:   C.temperature ?? 0.7,

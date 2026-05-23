@@ -1,8 +1,19 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { pool } = require('../config/database');
 const { authCompany } = require('../middleware/auth');
 const evolution = require('../providers/evolution');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+function detectKind(mime) {
+  if (!mime) return 'document';
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'document';
+}
 
 // Lista mensagens de uma conversa
 router.get('/:conversationId', authCompany, async (req, res) => {
@@ -86,6 +97,70 @@ router.post('/:conversationId', authCompany, async (req, res) => {
     res.status(201).json(msg[0]);
   } catch (err) {
     console.error('POST /messages/:id', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+// Enviar arquivo (imagem/video/audio/documento)
+router.post('/:conversationId/media', authCompany, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Arquivo obrigatório' });
+    const caption = req.body?.caption || '';
+
+    const { rows: conv } = await pool.query(`
+      SELECT c.id, c.contact_id, ct.phone, i.instance_name
+      FROM conversations c
+      JOIN contacts ct ON ct.id = c.contact_id
+      JOIN whatsapp_instances i ON i.id = c.instance_id
+      WHERE c.id=$1 AND c.company_id=$2
+    `, [req.params.conversationId, req.user.companyId]);
+    if (!conv.length) return res.status(404).json({ error: 'Conversa não encontrada' });
+    const c = conv[0];
+
+    const kind = detectKind(req.file.mimetype);
+    const base64 = req.file.buffer.toString('base64');
+
+    // Salva mensagem pendente
+    const { rows: ins } = await pool.query(`
+      INSERT INTO messages (conversation_id, from_me, author_type, author_user_id, type, body, media_mime, media_filename, status)
+      VALUES ($1, TRUE, 'agent', $2, $3, $4, $5, $6, 'pending') RETURNING id
+    `, [c.id, req.user.id, kind, caption, req.file.mimetype, req.file.originalname]);
+    const msgId = ins[0].id;
+
+    // Pausa IA + auto-assign
+    await pool.query(
+      `UPDATE conversations SET ai_paused_until = NOW() + INTERVAL '10 minutes',
+                                last_message_at = NOW(),
+                                last_message_preview = $1,
+                                assigned_to_user_id = COALESCE(assigned_to_user_id, $2)
+       WHERE id=$3`,
+      [`[${kind}] ${caption || req.file.originalname}`.slice(0, 200), req.user.id, c.id]
+    );
+
+    // Envia via Evolution
+    try {
+      const sent = await evolution.sendMedia(c.instance_name, c.phone, {
+        kind, base64, mimetype: req.file.mimetype, fileName: req.file.originalname, caption,
+      });
+      await pool.query(
+        'UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',
+        ['sent', sent?.id || null, msgId]
+      );
+    } catch (e) {
+      await pool.query('UPDATE messages SET status=$1, error=$2 WHERE id=$3',
+        ['failed', e.message?.slice(0, 500), msgId]);
+      return res.status(502).json({ error: 'Falha ao enviar mídia', detail: e.message });
+    }
+
+    // Emit
+    const io = req.app.get('io');
+    io?.to(`conv:${c.id}`).emit('message:new', { conversationId: c.id });
+    io?.to(`company:${req.user.companyId}`).emit('conversation:update', { conversationId: c.id });
+
+    const { rows: msg } = await pool.query('SELECT * FROM messages WHERE id=$1', [msgId]);
+    res.status(201).json(msg[0]);
+  } catch (err) {
+    console.error('POST /messages/:id/media', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });

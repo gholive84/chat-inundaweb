@@ -78,6 +78,28 @@ async function sendText(instanceName, phone, text) {
   return { id: data?.key?.id || data?.messageId || null, raw: data };
 }
 
+// kind: 'image' | 'video' | 'document' | 'audio'
+async function sendMedia(instanceName, phone, { kind, base64, mimetype, fileName, caption }) {
+  const number = String(phone).replace(/\D/g, '');
+  if (kind === 'audio') {
+    // Evolution tem endpoint dedicado pra audio (ptt-like)
+    const { data } = await http.post(`/message/sendWhatsAppAudio/${instanceName}`, {
+      number,
+      audio: base64,
+    });
+    return { id: data?.key?.id || null, raw: data };
+  }
+  const { data } = await http.post(`/message/sendMedia/${instanceName}`, {
+    number,
+    mediatype: kind, // image | video | document
+    mimetype,
+    media: base64,
+    fileName: fileName || (kind === 'image' ? 'image.jpg' : kind === 'video' ? 'video.mp4' : 'arquivo'),
+    caption: caption || '',
+  });
+  return { id: data?.key?.id || null, raw: data };
+}
+
 async function fetchProfilePicture(instanceName, phone) {
   try {
     const number = String(phone).replace(/\D/g, '');
@@ -92,5 +114,6 @@ module.exports = {
   disconnectInstance,
   deleteInstance,
   sendText,
+  sendMedia,
   fetchProfilePicture,
 };
