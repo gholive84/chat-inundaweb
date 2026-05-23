@@ -114,6 +114,18 @@ async function getMessageMediaBase64(instanceName, msg) {
   }
 }
 
+// Marca msgs como lidas
+async function markAsRead(instanceName, messages) {
+  try {
+    if (!messages?.length) return;
+    await http.post(`/chat/markMessageAsRead/${instanceName}`, {
+      readMessages: messages.map((m) => ({
+        remoteJid: m.remoteJid, fromMe: !!m.fromMe, id: m.id,
+      })),
+    });
+  } catch (e) { /* silent — nao critico */ }
+}
+
 // Envia indicador de presença (digitando.../gravando.../pausado)
 // presence: 'composing' | 'recording' | 'paused' | 'available'
 async function sendPresence(instanceName, phone, presence = 'composing', delay = 1000) {
@@ -141,6 +153,7 @@ module.exports = {
   sendText,
   sendMedia,
   sendPresence,
+  markAsRead,
   getMessageMediaBase64,
   fetchProfilePicture,
 };

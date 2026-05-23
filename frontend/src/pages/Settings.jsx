@@ -321,6 +321,56 @@ function TabAI() {
         <Field label="Max tokens"><input type="number" value={config.max_tokens ?? 1024} onChange={(e) => set({ max_tokens: parseInt(e.target.value || '1024') })} className={inputCls} /></Field>
         <Field label="Temperature"><input type="number" step="0.1" value={config.temperature ?? 0.7} onChange={(e) => set({ temperature: parseFloat(e.target.value || '0.7') })} className={inputCls} /></Field>
       </div>
+      {/* Seguranca anti-ban */}
+      <div className="border-t pt-4 mt-4 space-y-3" style={{ borderColor: 'var(--inunda-border)' }}>
+        <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>
+          🛡 Segurança WhatsApp (anti-ban)
+        </p>
+        <Field label="Máx. mensagens por minuto (por caixa)">
+          <input type="number" min={1} max={60} value={config.max_msgs_per_minute ?? 15}
+            onChange={(e) => set({ max_msgs_per_minute: parseInt(e.target.value || '15') })}
+            className={inputCls} />
+          <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+            Recomendado: 10-15 pra números novos, até 25-30 pra contas antigas. Atinge o limite → IA pula resposta.
+          </p>
+        </Field>
+
+        <Field label="Palavras de opt-out (cliente diz isso → IA é desativada nessa conversa)">
+          <textarea rows={2} value={config.opt_out_keywords || ''}
+            onChange={(e) => set({ opt_out_keywords: e.target.value })}
+            placeholder="parar, stop, descadastrar, ..."
+            className={`${inputCls} resize-y`} />
+          <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+            Separe por vírgula. Match parcial e case-insensitive (sem acentos).
+          </p>
+        </Field>
+
+        <label className="flex items-center gap-3 cursor-pointer">
+          <input type="checkbox" checked={!!config.business_hours_enabled}
+            onChange={(e) => set({ business_hours_enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
+          <span className="text-sm" style={{ color: 'var(--inunda-text)' }}>Limitar horário comercial (fora do horário, IA não responde)</span>
+        </label>
+        {config.business_hours_enabled && (
+          <div className="grid grid-cols-3 gap-3 pl-7">
+            <Field label="Início"><input type="time" value={config.business_hours_start || '08:00'}
+              onChange={(e) => set({ business_hours_start: e.target.value })} className={inputCls} /></Field>
+            <Field label="Fim"><input type="time" value={config.business_hours_end || '22:00'}
+              onChange={(e) => set({ business_hours_end: e.target.value })} className={inputCls} /></Field>
+            <Field label="Fuso">
+              <select value={config.business_hours_timezone || 'America/Sao_Paulo'}
+                onChange={(e) => set({ business_hours_timezone: e.target.value })} className={inputCls}>
+                <option value="America/Sao_Paulo">Brasília (BRT)</option>
+                <option value="America/Recife">Recife (BRT)</option>
+                <option value="America/Manaus">Manaus (AMT)</option>
+                <option value="America/Belem">Belém (BRT)</option>
+                <option value="America/Rio_Branco">Rio Branco (ACT)</option>
+                <option value="UTC">UTC</option>
+              </select>
+            </Field>
+          </div>
+        )}
+      </div>
+
       <button onClick={save} disabled={saving} className={btnPrimary}>{saving ? 'Salvando…' : 'Salvar'}</button>
     </div>
   );

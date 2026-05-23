@@ -6,7 +6,8 @@ const { authCompany, authRole } = require('../middleware/auth');
 router.get('/config', authCompany, async (req, res) => {
   const { rows } = await pool.query(
     `SELECT company_id, provider, model, system_prompt, pause_seconds, enabled, max_tokens, temperature,
-            default_conversation_ai,
+            default_conversation_ai, max_msgs_per_minute, opt_out_keywords,
+            business_hours_enabled, business_hours_start, business_hours_end, business_hours_timezone,
             (api_key IS NOT NULL AND length(api_key) > 0) AS has_key, updated_at
      FROM ai_configs WHERE company_id=$1`,
     [req.user.companyId]
@@ -15,6 +16,9 @@ router.get('/config', authCompany, async (req, res) => {
     company_id: req.user.companyId, provider: 'none', enabled: false,
     pause_seconds: 600, max_tokens: 1024, temperature: 0.7,
     default_conversation_ai: true, has_key: false,
+    max_msgs_per_minute: 15, opt_out_keywords: 'parar,stop,sair,descadastrar,unsubscribe,nao quero,nao tenho interesse,remova',
+    business_hours_enabled: false, business_hours_start: '08:00', business_hours_end: '22:00',
+    business_hours_timezone: 'America/Sao_Paulo',
   });
 });
 
@@ -79,13 +83,14 @@ router.post('/models', authCompany, async (req, res) => {
 
 router.put('/config', authCompany, authRole('owner'), async (req, res) => {
   try {
-    const { provider, api_key, model, system_prompt, pause_seconds, enabled, max_tokens, temperature, default_conversation_ai } = req.body;
-    // upsert (mantem api_key existente se vier vazio)
+    const b = req.body;
     await pool.query(`
       INSERT INTO ai_configs
-        (company_id, provider, api_key, model, system_prompt, pause_seconds, enabled, max_tokens, temperature, default_conversation_ai, updated_at)
+        (company_id, provider, api_key, model, system_prompt, pause_seconds, enabled, max_tokens, temperature,
+         default_conversation_ai, max_msgs_per_minute, opt_out_keywords,
+         business_hours_enabled, business_hours_start, business_hours_end, business_hours_timezone, updated_at)
       VALUES ($1,$2, COALESCE(NULLIF($3,''), (SELECT api_key FROM ai_configs WHERE company_id=$1)),
-              $4,$5,$6,$7,$8,$9,$10, NOW())
+              $4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16, NOW())
       ON CONFLICT (company_id) DO UPDATE SET
         provider                = EXCLUDED.provider,
         api_key                 = CASE WHEN EXCLUDED.api_key IS NULL OR EXCLUDED.api_key = ''
@@ -97,10 +102,22 @@ router.put('/config', authCompany, authRole('owner'), async (req, res) => {
         max_tokens              = EXCLUDED.max_tokens,
         temperature             = EXCLUDED.temperature,
         default_conversation_ai = EXCLUDED.default_conversation_ai,
+        max_msgs_per_minute     = EXCLUDED.max_msgs_per_minute,
+        opt_out_keywords        = EXCLUDED.opt_out_keywords,
+        business_hours_enabled  = EXCLUDED.business_hours_enabled,
+        business_hours_start    = EXCLUDED.business_hours_start,
+        business_hours_end      = EXCLUDED.business_hours_end,
+        business_hours_timezone = EXCLUDED.business_hours_timezone,
         updated_at              = NOW()
-    `, [req.user.companyId, provider || 'none', api_key || '', model || null, system_prompt || null,
-        pause_seconds ?? 600, !!enabled, max_tokens ?? 1024, temperature ?? 0.7,
-        default_conversation_ai !== false]);
+    `, [req.user.companyId, b.provider || 'none', b.api_key || '', b.model || null, b.system_prompt || null,
+        b.pause_seconds ?? 600, !!b.enabled, b.max_tokens ?? 1024, b.temperature ?? 0.7,
+        b.default_conversation_ai !== false,
+        b.max_msgs_per_minute ?? 15,
+        b.opt_out_keywords ?? 'parar,stop,sair,descadastrar,unsubscribe,nao quero,nao tenho interesse,remova',
+        !!b.business_hours_enabled,
+        b.business_hours_start || '08:00',
+        b.business_hours_end || '22:00',
+        b.business_hours_timezone || 'America/Sao_Paulo']);
     res.json({ success: true });
   } catch (err) {
     console.error('PUT /ai/config', err);

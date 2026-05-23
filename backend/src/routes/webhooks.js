@@ -4,6 +4,7 @@ const { pool } = require('../config/database');
 const aiResponder = require('../services/aiResponder');
 const evolution = require('../providers/evolution');
 const storage = require('../services/storage');
+const { isOptOut } = require('../services/safety');
 
 // Webhook do Evolution — endpoint publico, mas valida instance_name + token
 // Evolution chama POST /api/webhooks/evolution/{instance}/{token}
@@ -189,11 +190,33 @@ async function handleIncomingMessage(app, inst, payload) {
       });
     }
 
-    // Mensagem de contato (não nossa) → tenta resposta da IA (assincrono, fire-and-forget)
+    // Mensagem de contato (não nossa)
     if (!fromMe) {
+      // 1) Marca como lida no WhatsApp (comportamento humano + reduz banner "lido")
+      setImmediate(() => {
+        evolution.markAsRead(inst.instance_name, [{
+          remoteJid, fromMe: false, id: providerMsgId,
+        }]).catch(() => {});
+      });
+
+      // 2) Detecta opt-out — pausa IA na conversation pra sempre
+      try {
+        const { rows: cfg } = await pool.query(
+          'SELECT opt_out_keywords FROM ai_configs WHERE company_id=$1',
+          [inst.company_id]
+        );
+        const kw = cfg[0]?.opt_out_keywords || '';
+        if (body && isOptOut(body, kw)) {
+          await pool.query('UPDATE conversations SET opted_out=TRUE, ai_enabled=FALSE WHERE id=$1', [convId]);
+          console.log(`[opt-out] detected on conv ${convId}`);
+          io?.to(`company:${inst.company_id}`).emit('conversation:update', { conversationId: convId });
+        }
+      } catch (e) { console.warn('[opt-out check] erro:', e.message); }
+
+      // 3) Tenta resposta da IA
       setImmediate(() => {
         aiResponder.maybeRespond({ conversationId: convId, app })
-          .then((r) => { if (r?.skipped) console.log('[AI] skipped:', r.skipped); else if (r?.ok) console.log('[AI] responded msg', r.msgId); })
+          .then((r) => { if (r?.skipped) console.log('[AI] skipped:', r.skipped); else if (r?.ok) console.log('[AI] responded', r.chunks, 'chunk(s)'); })
           .catch((e) => console.error('[AI] error:', e.message));
       });
     }

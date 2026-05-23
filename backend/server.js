@@ -287,6 +287,15 @@ async function runMigrations() {
   `);
   // Default da IA em conversas novas (independente do enabled global)
   await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS default_conversation_ai BOOLEAN DEFAULT TRUE`);
+  // Hardening anti-ban: rate limit, opt-out, business hours
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS max_msgs_per_minute INTEGER DEFAULT 15`);
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS opt_out_keywords TEXT DEFAULT 'parar,stop,sair,descadastrar,unsubscribe,nao quero,nao tenho interesse,remova'`);
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS business_hours_enabled BOOLEAN DEFAULT FALSE`);
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS business_hours_start VARCHAR(5) DEFAULT '08:00'`);
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS business_hours_end VARCHAR(5) DEFAULT '22:00'`);
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS business_hours_timezone VARCHAR(50) DEFAULT 'America/Sao_Paulo'`);
+  // Indica se usuario fez opt-out — pausa IA naquela conversation pra sempre
+  await safe(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS opted_out BOOLEAN DEFAULT FALSE`);
 
   // ── Provider configs (Evolution / Z-API / Oficial) ──────────────────
   await safe(`

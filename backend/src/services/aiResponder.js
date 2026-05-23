@@ -3,6 +3,8 @@
 const { pool } = require('../config/database');
 const openai = require('../ai/openai');
 const evolution = require('../providers/evolution');
+const rateLimiter = require('./rateLimiter');
+const { jitter, isWithinBusinessHours } = require('./safety');
 
 const PROVIDERS = { openai };
 
@@ -68,10 +70,11 @@ async function maybeRespond({ conversationId, app }) {
   try {
     // 1) Pega contexto da conversa + config AI da company
     const { rows: cv } = await pool.query(`
-      SELECT c.id, c.company_id, c.instance_id, c.contact_id, c.ai_enabled, c.ai_paused_until, c.status,
+      SELECT c.id, c.company_id, c.instance_id, c.contact_id, c.ai_enabled, c.ai_paused_until, c.status, c.opted_out,
              ct.phone, ct.name AS contact_name, ct.push_name,
              i.instance_name,
-             ai.provider, ai.api_key, ai.model, ai.system_prompt, ai.max_tokens, ai.temperature, ai.enabled AS ai_globally_enabled
+             ai.provider, ai.api_key, ai.model, ai.system_prompt, ai.max_tokens, ai.temperature, ai.enabled AS ai_globally_enabled,
+             ai.max_msgs_per_minute, ai.business_hours_enabled, ai.business_hours_start, ai.business_hours_end, ai.business_hours_timezone
       FROM conversations c
       JOIN contacts ct ON ct.id = c.contact_id
       JOIN whatsapp_instances i ON i.id = c.instance_id
@@ -83,6 +86,7 @@ async function maybeRespond({ conversationId, app }) {
 
     if (!C.ai_globally_enabled) return { skipped: 'AI globally disabled' };
     if (!C.ai_enabled)          return { skipped: 'AI disabled for this conversation' };
+    if (C.opted_out)            return { skipped: 'contact opted out' };
     if (C.status !== 'open')    return { skipped: `conversation status ${C.status}` };
     if (C.ai_paused_until && new Date(C.ai_paused_until) > new Date()) {
       return { skipped: 'AI paused (agent active)' };
@@ -91,6 +95,22 @@ async function maybeRespond({ conversationId, app }) {
     const adapter = PROVIDERS[C.provider];
     if (!adapter) return { skipped: `unknown provider ${C.provider}` };
     if (!C.api_key) return { skipped: 'no api_key' };
+
+    // Safety check 1: business hours
+    if (!isWithinBusinessHours({
+      enabled: C.business_hours_enabled, start: C.business_hours_start,
+      end: C.business_hours_end, timezone: C.business_hours_timezone,
+    })) {
+      return { skipped: 'outside business hours' };
+    }
+
+    // Safety check 2: rate limit por instance
+    const maxPerMin = C.max_msgs_per_minute || 15;
+    const rl = rateLimiter.check(C.instance_name, maxPerMin);
+    if (!rl.allowed) {
+      console.log(`[AI] rate limit hit ${C.instance_name} (waiting ${rl.waitMs}ms)`);
+      return { skipped: `rate limit (${rl.waitMs}ms wait)` };
+    }
 
     // 1.5) Carrega knowledge base + adiciona diretrizes WhatsApp ao system prompt
     const { rows: kb } = await pool.query(
@@ -138,8 +158,15 @@ async function maybeRespond({ conversationId, app }) {
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
 
-      // Indicador de "digitando..." + delay humano antes de enviar
-      const typingMs = typingDelayFor(chunk.length);
+      // Re-checa rate limit antes de cada chunk (multi-chunk pode estourar)
+      const rlChunk = rateLimiter.check(C.instance_name, maxPerMin);
+      if (!rlChunk.allowed) {
+        console.log(`[AI] rate limit no chunk ${i+1}, esperando ${rlChunk.waitMs}ms`);
+        await sleep(rlChunk.waitMs + 500);
+      }
+
+      // Indicador de "digitando..." + delay humano com jitter
+      const typingMs = Math.floor(jitter(typingDelayFor(chunk.length)));
       try { await evolution.sendPresence(C.instance_name, C.phone, 'composing', typingMs); } catch {}
       await sleep(typingMs);
 
@@ -153,6 +180,7 @@ async function maybeRespond({ conversationId, app }) {
 
       try {
         const sent = await evolution.sendText(C.instance_name, C.phone, chunk);
+        rateLimiter.record(C.instance_name);
         await pool.query(
           'UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',
           ['sent', sent?.id || null, msgId]
@@ -175,8 +203,8 @@ async function maybeRespond({ conversationId, app }) {
       io?.to(`conv:${conversationId}`).emit('message:new', { conversationId, message: { id: msgId, body: chunk, from_me: true, author_type: 'ai' } });
       io?.to(`company:${C.company_id}`).emit('conversation:update', { conversationId });
 
-      // Pausa entre chunks (nao no ultimo)
-      if (i < chunks.length - 1) await sleep(PAUSE_BETWEEN_CHUNKS_MS);
+      // Pausa entre chunks com jitter (nao no ultimo)
+      if (i < chunks.length - 1) await sleep(Math.floor(jitter(PAUSE_BETWEEN_CHUNKS_MS, 0.4)));
     }
 
     // 5) Marca como "pausado" (encerra typing indicator)
