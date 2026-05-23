@@ -348,7 +348,7 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
         )}
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{contactName}</p>
-          <p className="text-xs font-mono-inunda" style={{ color: 'var(--inunda-text-faded)' }}>{conv.phone}</p>
+          <p className="text-xs font-mono-inunda hidden md:block" style={{ color: 'var(--inunda-text-faded)' }}>{conv.phone}</p>
         </div>
         <button onClick={toggleUrgent}
           title={conv.is_urgent ? 'Remover urgência' : 'Marcar como urgente'}
@@ -387,12 +387,12 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
         {onToggleInfo && (
           <button onClick={onToggleInfo}
             title={infoOpen ? 'Esconder info' : 'Mostrar info'}
-            className="p-2 rounded-lg transition-colors"
+            className="w-10 h-10 md:w-9 md:h-9 rounded-full flex items-center justify-center transition-colors"
             style={{
-              background: infoOpen ? 'var(--inunda-cyan-faint)' : 'transparent',
-              color: infoOpen ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+              background: infoOpen ? 'var(--inunda-cyan)' : 'var(--inunda-cyan-faint)',
+              color: infoOpen ? 'var(--inunda-bg-deep)' : 'var(--inunda-cyan)',
             }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
             </svg>
           </button>
