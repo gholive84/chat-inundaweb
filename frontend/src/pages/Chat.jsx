@@ -4,6 +4,7 @@ import api from '../services/api';
 import useSocketStore from '../store/socketStore';
 import ChatPanel from '../components/ChatPanel';
 import ContactInfoPanel from '../components/ContactInfoPanel';
+import InboxSidebar from '../components/InboxSidebar';
 import { relativeTime } from '../utils/relativeTime';
 import { notify } from '../services/notifications';
 
@@ -75,40 +76,36 @@ export default function Chat() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [items, setItems] = useState([]);
+  const [instances, setInstances] = useState([]);
+  const [sidebarTick, setSidebarTick] = useState(0); // refresh dos counts da InboxSidebar
   const [activeConv, setActiveConv] = useState(null);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('open');
-  const [assigned, setAssigned] = useState('all');
-  const [instanceFilter, setInstanceFilter] = useState('all');
-  const [instances, setInstances] = useState([]);
-  const [tagFilter, setTagFilter] = useState('all');
-  const [tags, setTags] = useState([]);
+  // Filtro unificado da InboxSidebar: { view: 'all'|'me'|'unassigned', instance_id, tag_id }
+  const [filter, setFilter] = useState({ view: 'all', instance_id: null, tag_id: null });
   const [infoOpen, setInfoOpen] = useState(() => {
     try { return localStorage.getItem('chat_info_panel_open') !== 'false'; } catch { return true; }
   });
   const socket = useSocketStore((s) => s.socket) || useSocketStore.getState().connect();
   const activeId = parseInt(id);
 
-  useEffect(() => {
-    api.get('/instances').then((r) => setInstances(r.data)).catch(() => {});
-    api.get('/tags').then((r) => setTags(r.data)).catch(() => {});
-  }, []);
+  useEffect(() => { api.get('/instances').then((r) => setInstances(r.data)).catch(() => {}); }, []);
 
   function load() {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
-    if (assigned !== 'all') params.set('assigned', assigned);
+    if (filter.view === 'me') params.set('assigned', 'me');
+    else if (filter.view === 'unassigned') params.set('assigned', 'unassigned');
     if (search.trim()) params.set('search', search.trim());
-    if (instanceFilter !== 'all') params.set('instance_id', instanceFilter);
-    if (tagFilter !== 'all') params.set('tag_id', tagFilter);
+    if (filter.instance_id) params.set('instance_id', filter.instance_id);
+    if (filter.tag_id) params.set('tag_id', filter.tag_id);
     api.get(`/conversations?${params}`).then((r) => setItems(r.data)).catch(() => {});
   }
-  // debounce search
   useEffect(() => {
     const t = setTimeout(load, 300);
     return () => clearTimeout(t);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, assigned, search, instanceFilter, tagFilter]);
+  }, [status, search, filter]);
 
   useEffect(() => { try { localStorage.setItem('chat_info_panel_open', String(infoOpen)); } catch {} }, [infoOpen]);
 
@@ -121,9 +118,10 @@ export default function Chat() {
 
   useEffect(() => {
     if (!socket) return;
-    const onUpdate = () => load();
+    const onUpdate = () => { load(); setSidebarTick((x) => x + 1); };
     const onNewMsg = (payload) => {
       load();
+      setSidebarTick((x) => x + 1);
       // Notifica se conversa nao e a ativa e msg veio do contato
       if (payload?.message && !payload.message.from_me && payload.conversationId !== activeId) {
         // Busca o nome do contato pra mostrar
@@ -145,15 +143,28 @@ export default function Chat() {
     };
   }, [socket, activeId, items, navigate]);
 
+  // Label do header da lista — reflete o filtro ativo da sidebar
+  const headerLabel = filter.instance_id
+    ? `📦 ${instances.find((i) => i.id === filter.instance_id)?.display_name || 'Caixa'}`
+    : filter.tag_id
+    ? '🏷 Marcador'
+    : filter.view === 'me' ? 'Minhas' : filter.view === 'unassigned' ? 'Não atribuídas' : 'Conversas';
+
   return (
     <div className="flex h-full">
-      {/* Lista */}
+      {/* Sidebar caixas + marcadores (so desktop) */}
+      <InboxSidebar filter={{ ...filter, _refresh: sidebarTick }} onFilterChange={setFilter} />
+
+      {/* Lista de conversas */}
       <div className={`${activeId ? 'hidden md:flex' : 'flex'} w-full md:w-80 flex-shrink-0 border-r flex-col`}
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
         <div className="p-3 border-b space-y-2" style={{ borderColor: 'var(--inunda-border)' }}>
-          <h2 className="font-semibold text-sm px-1" style={{ color: 'var(--inunda-text)' }}>Conversas</h2>
+          <h2 className="font-semibold text-sm px-1 flex items-center gap-2" style={{ color: 'var(--inunda-text)' }}>
+            <span className="truncate">{headerLabel}</span>
+            <span className="text-[10px] font-normal" style={{ color: 'var(--inunda-text-faded)' }}>{items.length}</span>
+          </h2>
           <input value={search} onChange={(e) => setSearch(e.target.value)}
-            placeholder="🔍 Buscar nome, número, msg..."
+            placeholder="🔍 Buscar..."
             className="w-full bg-white/5 border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-400"
             style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
           <div className="flex gap-1">
@@ -172,43 +183,6 @@ export default function Chat() {
               </button>
             ))}
           </div>
-          <div className="flex gap-1">
-            {[
-              { v: 'all', l: 'Todos' },
-              { v: 'me', l: 'Minhas' },
-              { v: 'unassigned', l: 'Sem agente' },
-            ].map((opt) => (
-              <button key={opt.v} onClick={() => setAssigned(opt.v)}
-                className="text-[11px] px-2 py-1 rounded-md transition-colors flex-1 border"
-                style={{
-                  background: assigned === opt.v ? 'var(--inunda-cyan-faint)' : 'transparent',
-                  color: assigned === opt.v ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
-                  borderColor: assigned === opt.v ? 'transparent' : 'var(--inunda-border)',
-                }}>
-                {opt.l}
-              </button>
-            ))}
-          </div>
-          {instances.length > 1 && (
-            <select value={instanceFilter} onChange={(e) => setInstanceFilter(e.target.value)}
-              className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
-              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
-              <option value="all">📦 Todas as caixas</option>
-              {instances.map((i) => (
-                <option key={i.id} value={i.id}>📦 {i.display_name || i.instance_name}</option>
-              ))}
-            </select>
-          )}
-          {tags.length > 0 && (
-            <select value={tagFilter} onChange={(e) => setTagFilter(e.target.value)}
-              className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
-              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
-              <option value="all">🏷 Todas as tags</option>
-              {tags.map((t) => (
-                <option key={t.id} value={t.id}>🏷 {t.label}</option>
-              ))}
-            </select>
-          )}
         </div>
         <ConversationList items={items} activeId={activeId}
           showInstance={instances.length > 1}
