@@ -48,20 +48,33 @@ router.post('/:conversationId', authCompany, async (req, res) => {
     if (!body?.trim()) return res.status(400).json({ error: 'Conteúdo vazio' });
 
     const { rows: conv } = await pool.query(`
-      SELECT c.id, c.contact_id, ct.phone, i.instance_name
+      SELECT c.id, c.contact_id, ct.phone, i.instance_name,
+             co.sign_messages, co.signature_format
       FROM conversations c
       JOIN contacts ct ON ct.id = c.contact_id
       JOIN whatsapp_instances i ON i.id = c.instance_id
+      JOIN companies co ON co.id = c.company_id
       WHERE c.id=$1 AND c.company_id=$2
     `, [req.params.conversationId, req.user.companyId]);
     if (!conv.length) return res.status(404).json({ error: 'Conversa não encontrada' });
     const c = conv[0];
 
-    // Salva como pending
+    // Assinatura: prepend nome do agente se config ativa
+    let bodyToSend = body;
+    if (c.sign_messages) {
+      const agentName = req.user.name || 'Atendente';
+      let signature;
+      if (c.signature_format === 'brackets') signature = `[${agentName}]`;
+      else if (c.signature_format === 'plain') signature = `${agentName}:`;
+      else signature = `*${agentName}*`; // bold (default — WhatsApp renderiza *texto* como negrito)
+      bodyToSend = `${signature}\n${body}`;
+    }
+
+    // Salva como pending — guarda o body COM assinatura (refletindo o que foi enviado)
     const { rows: ins } = await pool.query(`
       INSERT INTO messages (conversation_id, from_me, author_type, author_user_id, type, body, status)
       VALUES ($1, TRUE, 'agent', $2, $3, $4, 'pending') RETURNING id
-    `, [c.id, req.user.id, type, body]);
+    `, [c.id, req.user.id, type, bodyToSend]);
     const msgId = ins[0].id;
 
     // Pausa IA + auto-atribui agente se ainda nao tinha
@@ -71,12 +84,12 @@ router.post('/:conversationId', authCompany, async (req, res) => {
                                 last_message_preview = $1,
                                 assigned_to_user_id = COALESCE(assigned_to_user_id, $2)
        WHERE id=$3`,
-      [body.slice(0, 200), req.user.id, c.id]
+      [bodyToSend.slice(0, 200), req.user.id, c.id]
     );
 
-    // Envia via provider
+    // Envia via provider (com assinatura ja aplicada se aplicavel)
     try {
-      const sent = await evolution.sendText(c.instance_name, c.phone, body);
+      const sent = await evolution.sendText(c.instance_name, c.phone, bodyToSend);
       await pool.query(
         'UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',
         ['sent', sent?.id || null, msgId]

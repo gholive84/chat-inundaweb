@@ -169,8 +169,11 @@ router.post('/switch-company', authCompany, async (req, res) => {
   }
 });
 
-// Cria nova empresa pra um usuario logado (vira owner)
+// Cria nova empresa — somente super admin
 router.post('/companies', authCompany, async (req, res) => {
+  if (!req.user.isSuperAdmin) {
+    return res.status(403).json({ error: 'Apenas super admin pode criar novas empresas' });
+  }
   const client = await pool.connect();
   try {
     const { name } = req.body;

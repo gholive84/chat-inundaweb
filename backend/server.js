@@ -97,6 +97,10 @@ async function runMigrations() {
   // Super admin (controla todas as empresas — operador da plataforma)
   await safe(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_super_admin BOOLEAN DEFAULT FALSE`);
 
+  // Empresas: opcoes de configuracao
+  await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS sign_messages BOOLEAN DEFAULT FALSE`);
+  await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS signature_format VARCHAR(50) DEFAULT 'bold'`); // bold | brackets | plain
+
   // ── User memberships em multiplas companies ──────────────────────────
   // Um user pode ser owner de varias empresas. A coluna company_id em users
   // funciona como "empresa principal" (a do signup), mas o user pode ter

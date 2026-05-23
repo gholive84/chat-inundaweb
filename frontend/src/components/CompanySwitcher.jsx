@@ -4,7 +4,8 @@ import useAuthStore from '../store/authStore';
 import useSocketStore from '../store/socketStore';
 
 export default function CompanySwitcher() {
-  const { company, companies, setAuth, setCompanies } = useAuthStore();
+  const { user, company, companies, setAuth, setCompanies } = useAuthStore();
+  const isSuper = !!user?.is_super_admin;
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
@@ -54,6 +55,19 @@ export default function CompanySwitcher() {
   if (!company) return null;
   const list = companies && companies.length ? companies : [{ id: company.id, name: company.name, role: 'owner' }];
 
+  // Sem dropdown se so 1 empresa e nao for super admin (nada pra trocar/criar)
+  if (list.length <= 1 && !isSuper) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-1.5 max-w-[260px]">
+        <span className="w-6 h-6 rounded-md flex items-center justify-center text-xs font-semibold flex-shrink-0"
+          style={{ background: 'var(--inunda-cyan-faint)', color: 'var(--inunda-cyan)' }}>
+          {company.name?.[0]?.toUpperCase() || '?'}
+        </span>
+        <span className="text-sm font-medium truncate" style={{ color: 'var(--inunda-text)' }}>{company.name}</span>
+      </div>
+    );
+  }
+
   return (
     <div ref={ref} className="relative">
       <button onClick={() => setOpen((v) => !v)}
@@ -97,7 +111,8 @@ export default function CompanySwitcher() {
             ))}
           </div>
 
-          {creating ? (
+          {/* Criar nova empresa: somente super admin */}
+          {isSuper && (creating ? (
             <div className="p-3 border-t space-y-2" style={{ borderColor: 'var(--inunda-border)' }}>
               {error && <p className="text-xs text-red-400">{error}</p>}
               <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)}
@@ -118,9 +133,9 @@ export default function CompanySwitcher() {
               style={{ borderColor: 'var(--inunda-border)', color: 'var(--inunda-cyan)' }}>
               <span className="w-7 h-7 rounded-md flex items-center justify-center text-base font-light"
                 style={{ background: 'var(--inunda-cyan-faint)' }}>+</span>
-              <span className="text-sm font-medium">Nova empresa</span>
+              <span className="text-sm font-medium">Nova empresa <span className="text-[10px] opacity-60 uppercase">super</span></span>
             </button>
-          )}
+          ))}
         </div>
       )}
     </div>

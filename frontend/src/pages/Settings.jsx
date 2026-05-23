@@ -23,6 +23,65 @@ function Notice({ type = 'info', children }) {
   );
 }
 
+// ─── Empresa: assinatura de msg ───────────────────────────────────
+function CompanySettings() {
+  const [cfg, setCfg] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [ok, setOk] = useState('');
+  useEffect(() => { api.get('/companies/me').then((r) => setCfg(r.data.company)).catch(() => {}); }, []);
+  if (!cfg) return null;
+  const set = (p) => setCfg({ ...cfg, ...p });
+  async function save() {
+    setSaving(true);
+    try {
+      await api.put('/companies/me', cfg);
+      setOk('Salvo'); setTimeout(() => setOk(''), 2000);
+    } catch {} finally { setSaving(false); }
+  }
+  const fmt = cfg.signature_format || 'bold';
+  const preview = fmt === 'brackets' ? '[Gustavo]' : fmt === 'plain' ? 'Gustavo:' : '*Gustavo*';
+  return (
+    <div className="rounded-xl border p-5 space-y-3"
+      style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+      <div className="flex items-start gap-3">
+        <span className="text-2xl">✍️</span>
+        <div className="flex-1">
+          <p className="font-semibold" style={{ color: 'var(--inunda-text)' }}>Assinar mensagens</p>
+          <p className="text-xs" style={{ color: 'var(--inunda-text-muted)' }}>
+            Adiciona o nome do atendente automaticamente acima de cada mensagem enviada.
+            Útil quando vários atendentes respondem do mesmo número.
+          </p>
+        </div>
+      </div>
+      <label className="flex items-center gap-3 cursor-pointer">
+        <input type="checkbox" checked={!!cfg.sign_messages} onChange={(e) => set({ sign_messages: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
+        <span className="text-sm" style={{ color: 'var(--inunda-text)' }}>Habilitar assinatura</span>
+      </label>
+      {cfg.sign_messages && (
+        <>
+          <div>
+            <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1.5" style={{ color: 'var(--inunda-text-faded)' }}>Formato</label>
+            <select value={fmt} onChange={(e) => set({ signature_format: e.target.value })} className={inputCls}>
+              <option value="bold">*Nome* (negrito WhatsApp)</option>
+              <option value="brackets">[Nome]</option>
+              <option value="plain">Nome:</option>
+            </select>
+          </div>
+          <div className="rounded-lg p-3 text-xs font-mono-inunda" style={{ background: 'rgba(0,212,232,0.08)', color: 'var(--inunda-text)' }}>
+            <p className="opacity-60 text-[10px] mb-1">Preview:</p>
+            <p>{preview}</p>
+            <p>Olá! Como posso ajudar?</p>
+          </div>
+        </>
+      )}
+      {ok && <Notice type="success">{ok}</Notice>}
+      <button onClick={save} disabled={saving} className="btn-primary px-4 py-2 rounded-lg text-sm">
+        {saving ? 'Salvando…' : 'Salvar'}
+      </button>
+    </div>
+  );
+}
+
 // ─── Tab App (PWA + notificações) ─────────────────────────────────
 function TabApp() {
   const [installable, setInstallable] = useState(!!window.__pwaInstallPrompt);
@@ -63,6 +122,9 @@ function TabApp() {
 
   return (
     <div className="space-y-5 max-w-2xl">
+      {/* Empresa: assinatura */}
+      <CompanySettings />
+
       {/* PWA Install */}
       <div className="rounded-xl border p-5"
         style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
@@ -326,6 +388,13 @@ function TabAgents() {
     try { await api.put(`/companies/agents/${a.id}`, { name: a.name, email: a.email, role: a.role, active: !a.active }); load(); }
     catch (e) { alert(e.response?.data?.error || 'Erro'); }
   }
+
+  async function delAgent(a) {
+    if (a.id === me?.id) { alert('Você não pode deletar a si mesmo'); return; }
+    if (!confirm(`Deletar o atendente "${a.name}"? Isso remove ele desta empresa.`)) return;
+    try { await api.delete(`/companies/agents/${a.id}`); load(); }
+    catch (e) { alert(e.response?.data?.error || 'Erro ao deletar'); }
+  }
   return (
     <div className="space-y-4 max-w-2xl">
       <div className="flex items-center justify-between">
@@ -388,11 +457,18 @@ function TabAgents() {
             <button onClick={() => { setEditing(a); setForm({ name: a.name, email: a.email, password: '', role: a.role }); setShowForm(true); setErr(''); }}
               className="text-xs px-3 py-1.5 rounded-md" style={{ color: 'var(--inunda-cyan)' }}>Editar</button>
             {me?.id !== a.id && (
-              <button onClick={() => toggleActive(a)}
-                className="text-xs px-3 py-1.5 rounded-md"
-                style={{ color: a.active ? '#ef4444' : '#22c55e' }}>
-                {a.active ? 'Desativar' : 'Ativar'}
-              </button>
+              <>
+                <button onClick={() => toggleActive(a)}
+                  className="text-xs px-2 py-1.5 rounded-md"
+                  style={{ color: a.active ? '#fbbf24' : '#22c55e' }}>
+                  {a.active ? 'Desativar' : 'Ativar'}
+                </button>
+                <button onClick={() => delAgent(a)}
+                  className="text-xs px-2 py-1.5 rounded-md"
+                  style={{ color: '#ef4444' }}>
+                  Excluir
+                </button>
+              </>
             )}
           </div>
         ))}

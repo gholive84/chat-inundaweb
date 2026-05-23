@@ -7,7 +7,7 @@ const { authCompany, authRole } = require('../middleware/auth');
 router.get('/me', authCompany, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      'SELECT id, slug, name, email, max_agents, created_at FROM companies WHERE id=$1',
+      'SELECT id, slug, name, email, max_agents, sign_messages, signature_format, created_at FROM companies WHERE id=$1',
       [req.user.companyId]
     );
     if (!rows.length) return res.status(404).json({ error: 'Empresa não encontrada' });
@@ -24,9 +24,11 @@ router.get('/me', authCompany, async (req, res) => {
 
 router.put('/me', authCompany, authRole('owner'), async (req, res) => {
   try {
-    const { name, email } = req.body;
-    await pool.query('UPDATE companies SET name=$1, email=$2 WHERE id=$3',
-      [name, email || null, req.user.companyId]);
+    const { name, email, sign_messages, signature_format } = req.body;
+    await pool.query(
+      `UPDATE companies SET name=$1, email=$2, sign_messages=$3, signature_format=$4 WHERE id=$5`,
+      [name, email || null, !!sign_messages, signature_format || 'bold', req.user.companyId]
+    );
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Erro interno' });
@@ -96,6 +98,37 @@ router.put('/agents/:id', authCompany, authRole('owner'), async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Email já existe' });
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+router.delete('/agents/:id', authCompany, authRole('owner'), async (req, res) => {
+  try {
+    if (parseInt(req.params.id) === parseInt(req.user.id)) {
+      return res.status(400).json({ error: 'Você não pode deletar a si mesmo' });
+    }
+    // Garante que o agente pertence à mesma company do owner
+    const { rows } = await pool.query(
+      'SELECT 1 FROM users WHERE id=$1 AND company_id=$2',
+      [req.params.id, req.user.companyId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Agente não encontrado' });
+    // Remove memberships dessa company e desativa user (não hard delete pra preservar historico de mensagens)
+    await pool.query(
+      'DELETE FROM user_memberships WHERE user_id=$1 AND company_id=$2',
+      [req.params.id, req.user.companyId]
+    );
+    // Se for o último membership, marca como inativo
+    const { rows: rest } = await pool.query(
+      'SELECT 1 FROM user_memberships WHERE user_id=$1',
+      [req.params.id]
+    );
+    if (!rest.length) {
+      await pool.query('UPDATE users SET active=FALSE WHERE id=$1', [req.params.id]);
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /agents/:id', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });
