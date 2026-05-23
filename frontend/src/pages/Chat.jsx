@@ -163,6 +163,22 @@ export default function Chat() {
             <span className="truncate">{headerLabel}</span>
             <span className="text-[10px] font-normal" style={{ color: 'var(--inunda-text-faded)' }}>{items.length}</span>
           </h2>
+          {/* Seletor de caixa MOBILE (desktop usa InboxSidebar) */}
+          {instances.length > 0 && (
+            <select
+              className="md:hidden w-full bg-white/5 border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-cyan-400"
+              style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}
+              value={filter.instance_id || ''}
+              onChange={(e) => {
+                const v = e.target.value;
+                setFilter({ ...filter, instance_id: v ? parseInt(v) : null, tag_id: null, view: 'all' });
+              }}>
+              <option value="">📦 Todas as caixas</option>
+              {instances.map((i) => (
+                <option key={i.id} value={i.id}>📦 {i.display_name || i.instance_name}</option>
+              ))}
+            </select>
+          )}
           <input value={search} onChange={(e) => setSearch(e.target.value)}
             placeholder="🔍 Buscar..."
             className="w-full bg-white/5 border rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-cyan-400"

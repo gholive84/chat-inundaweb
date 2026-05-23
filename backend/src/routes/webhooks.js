@@ -107,10 +107,10 @@ async function handleIncomingMessage(app, inst, payload) {
   );
   if (cv.length) convId = cv[0].id;
   else {
-    // Lê default_conversation_ai da company
+    // Lê default_conversation_ai da caixa (por instance)
     const { rows: cfg } = await pool.query(
-      'SELECT COALESCE(default_conversation_ai, TRUE) AS def FROM ai_configs WHERE company_id=$1',
-      [inst.company_id]
+      'SELECT COALESCE(default_conversation_ai, TRUE) AS def FROM ai_configs WHERE instance_id=$1',
+      [inst.id]
     );
     const defaultAi = cfg.length ? !!cfg[0].def : true;
     const { rows: ins } = await pool.query(
@@ -202,8 +202,8 @@ async function handleIncomingMessage(app, inst, payload) {
       // 2) Detecta opt-out — pausa IA na conversation pra sempre
       try {
         const { rows: cfg } = await pool.query(
-          'SELECT opt_out_keywords FROM ai_configs WHERE company_id=$1',
-          [inst.company_id]
+          'SELECT opt_out_keywords FROM ai_configs WHERE instance_id=$1',
+          [inst.id]
         );
         const kw = cfg[0]?.opt_out_keywords || '';
         if (body && isOptOut(body, kw)) {

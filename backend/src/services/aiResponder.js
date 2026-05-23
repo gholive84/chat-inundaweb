@@ -68,17 +68,18 @@ function typingDelayFor(textLen) {
 
 async function maybeRespond({ conversationId, app }) {
   try {
-    // 1) Pega contexto da conversa + config AI da company
+    // 1) Pega contexto da conversa + config AI DA CAIXA (per-instance)
     const { rows: cv } = await pool.query(`
       SELECT c.id, c.company_id, c.instance_id, c.contact_id, c.ai_enabled, c.ai_paused_until, c.status, c.opted_out,
              ct.phone, ct.name AS contact_name, ct.push_name,
              i.instance_name,
+             ai.name AS ai_name,
              ai.provider, ai.api_key, ai.model, ai.system_prompt, ai.max_tokens, ai.temperature, ai.enabled AS ai_globally_enabled,
              ai.max_msgs_per_minute, ai.business_hours_enabled, ai.business_hours_start, ai.business_hours_end, ai.business_hours_timezone
       FROM conversations c
       JOIN contacts ct ON ct.id = c.contact_id
       JOIN whatsapp_instances i ON i.id = c.instance_id
-      LEFT JOIN ai_configs ai ON ai.company_id = c.company_id
+      LEFT JOIN ai_configs ai ON ai.instance_id = c.instance_id
       WHERE c.id = $1
     `, [conversationId]);
     if (!cv.length) return { skipped: 'conversation not found' };
@@ -112,10 +113,10 @@ async function maybeRespond({ conversationId, app }) {
       return { skipped: `rate limit (${rl.waitMs}ms wait)` };
     }
 
-    // 1.5) Carrega knowledge base + adiciona diretrizes WhatsApp ao system prompt
+    // 1.5) Carrega knowledge base DA CAIXA + adiciona diretrizes WhatsApp ao system prompt
     const { rows: kb } = await pool.query(
-      `SELECT title, content FROM ai_knowledge WHERE company_id=$1 ORDER BY created_at ASC LIMIT 20`,
-      [C.company_id]
+      `SELECT title, content FROM ai_knowledge WHERE instance_id=$1 ORDER BY created_at ASC LIMIT 20`,
+      [C.instance_id]
     );
     let systemPrompt = C.system_prompt || 'Voce e um atendente automatico. Seja cordial e breve.';
     systemPrompt += BASE_GUIDELINES;

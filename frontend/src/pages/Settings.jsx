@@ -4,10 +4,9 @@ import useAuthStore from '../store/authStore';
 import { getPermission, requestPermission, notify } from '../services/notifications';
 
 const TABS = [
-  { id: 'app',        label: 'App',          icon: '📱' },
-  { id: 'ai',         label: 'IA',           icon: '🤖' },
-  { id: 'knowledge',  label: 'Conhecimento', icon: '📚' },
-  { id: 'agents',     label: 'Atendentes',   icon: '👥' },
+  { id: 'app',        label: 'App',         icon: '📱' },
+  { id: 'ai',         label: 'IA por Caixa', icon: '🤖' },
+  { id: 'agents',     label: 'Atendentes',  icon: '👥' },
 ];
 
 function Notice({ type = 'info', children }) {
@@ -206,22 +205,107 @@ function TabApp() {
   );
 }
 
-// ─── Tab IA ────────────────────────────────────────────────────────
+// ─── Tab IA por Caixa ──────────────────────────────────────────────
+// Cada caixa (WhatsApp instance) tem sua propria IA, com nome, prompt, KB.
+// Mostra seletor no topo (funciona desktop + mobile) e renderiza config da caixa selecionada abaixo.
 function TabAI() {
+  const [instances, setInstances] = useState([]);
+  const [selectedId, setSelectedId] = useState(null);
+  const [loadingList, setLoadingList] = useState(true);
+
+  useEffect(() => {
+    api.get('/ai/instances').then((r) => {
+      setInstances(r.data);
+      // Restaura ultima selecionada ou pega a primeira
+      const last = parseInt(localStorage.getItem('ai_selected_instance') || '0');
+      const pick = r.data.find((i) => i.instance_id === last) || r.data[0];
+      if (pick) setSelectedId(pick.instance_id);
+    }).catch(() => {}).finally(() => setLoadingList(false));
+  }, []);
+
+  function pickInstance(id) {
+    setSelectedId(id);
+    try { localStorage.setItem('ai_selected_instance', String(id)); } catch {}
+  }
+
+  if (loadingList) return <p className="text-sm" style={{ color: 'var(--inunda-text-muted)' }}>Carregando…</p>;
+
+  if (instances.length === 0) {
+    return (
+      <div className="rounded-xl border p-6 text-center"
+        style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+        <p className="text-3xl mb-2">📦</p>
+        <p className="text-sm font-medium mb-1" style={{ color: 'var(--inunda-text)' }}>Nenhuma caixa criada ainda</p>
+        <p className="text-xs mb-3" style={{ color: 'var(--inunda-text-muted)' }}>
+          Cada IA é vinculada a uma caixa WhatsApp. Conecte uma caixa primeiro.
+        </p>
+        <a href="/app/connect" className="btn-primary inline-block text-sm px-4 py-2 rounded-lg">+ Conectar caixa</a>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Seletor de caixa — funciona em mobile e desktop */}
+      <div className="rounded-xl border p-3"
+        style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+        <label className="text-[10px] uppercase tracking-wider font-semibold block mb-1.5" style={{ color: 'var(--inunda-text-faded)' }}>
+          📦 Selecione a caixa
+        </label>
+        <select value={selectedId || ''} onChange={(e) => pickInstance(parseInt(e.target.value))}
+          className={`${inputCls} font-medium`}>
+          {instances.map((i) => (
+            <option key={i.instance_id} value={i.instance_id}>
+              {i.display_name || i.instance_name}
+              {i.name ? ` — IA: ${i.name}` : ''}
+              {i.enabled ? ' • IA ON' : i.has_key ? ' • configurada' : ' • sem config'}
+            </option>
+          ))}
+        </select>
+        {/* Pills com toggle rapido entre caixas em desktop */}
+        <div className="hidden md:flex flex-wrap gap-1.5 mt-2">
+          {instances.map((i) => (
+            <button key={i.instance_id} onClick={() => pickInstance(i.instance_id)}
+              className="text-xs px-2.5 py-1 rounded-full border transition-colors"
+              style={{
+                borderColor: i.instance_id === selectedId ? 'var(--inunda-cyan)' : 'var(--inunda-border)',
+                background: i.instance_id === selectedId ? 'var(--inunda-cyan-faint)' : 'transparent',
+                color: i.instance_id === selectedId ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+              }}>
+              {i.display_name || i.instance_name}
+              {i.enabled && <span className="ml-1">🟢</span>}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {selectedId && <InstanceAIPanel key={selectedId} instanceId={selectedId} onSaved={() => {
+        api.get('/ai/instances').then((r) => setInstances(r.data)).catch(() => {});
+      }} />}
+    </div>
+  );
+}
+
+// Painel de config da IA + KB de UMA caixa
+function InstanceAIPanel({ instanceId, onSaved }) {
   const [config, setConfig] = useState(null);
   const [saving, setSaving] = useState(false);
   const [ok, setOk] = useState(''); const [err, setErr] = useState('');
   const [models, setModels] = useState([]);
   const [loadingModels, setLoadingModels] = useState(false);
   const [modelsErr, setModelsErr] = useState('');
-  useEffect(() => { api.get('/ai/config').then((r) => setConfig(r.data)).catch(() => {}); }, []);
+  const [tab, setTab] = useState('config'); // config | knowledge
 
-  // Carrega modelos: usa key salva (has_key) OU key digitada agora
+  useEffect(() => {
+    setConfig(null); setModels([]); setModelsErr('');
+    api.get(`/ai/instances/${instanceId}`).then((r) => setConfig(r.data)).catch(() => {});
+  }, [instanceId]);
+
   async function loadModels(provider, apiKey) {
     if (provider === 'none' || !provider) { setModels([]); setModelsErr(''); return; }
     setLoadingModels(true); setModelsErr('');
     try {
-      const { data } = await api.post('/ai/models', { provider, api_key: apiKey || undefined });
+      const { data } = await api.post('/ai/models', { provider, api_key: apiKey || undefined, instance_id: instanceId });
       setModels(data || []);
     } catch (e) {
       setModelsErr(e.response?.data?.error || 'Erro');
@@ -229,179 +313,208 @@ function TabAI() {
     } finally { setLoadingModels(false); }
   }
 
-  // Auto-load quando config tem key salva + provider
   useEffect(() => {
     if (config?.has_key && config?.provider && config.provider !== 'none' && models.length === 0) {
       loadModels(config.provider);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config?.has_key, config?.provider]);
+  }, [config?.has_key, config?.provider, instanceId]);
 
-  if (!config) return <p className="text-sm text-white/50">Carregando…</p>;
+  if (!config) return <p className="text-sm" style={{ color: 'var(--inunda-text-muted)' }}>Carregando config…</p>;
   const set = (p) => setConfig({ ...config, ...p });
+
   async function save() {
     setErr(''); setOk(''); setSaving(true);
     try {
-      await api.put('/ai/config', config);
-      // Recarrega config pra refletir has_key
-      const { data } = await api.get('/ai/config');
+      await api.put(`/ai/instances/${instanceId}`, config);
+      const { data } = await api.get(`/ai/instances/${instanceId}`);
       setConfig(data);
       setOk('Salvo'); setTimeout(() => setOk(''), 2000);
-      // Tenta listar modelos se ainda nao tem
       if (data.provider !== 'none') loadModels(data.provider);
+      onSaved?.();
     }
     catch (e) { setErr(e.response?.data?.error || 'Erro'); }
     finally { setSaving(false); }
   }
+
   return (
-    <div className="space-y-4 max-w-2xl">
-      {err && <Notice type="error">{err}</Notice>}
-      {ok && <Notice type="success">{ok}</Notice>}
-      <label className="flex items-center gap-3 cursor-pointer">
-        <input type="checkbox" checked={!!config.enabled} onChange={(e) => set({ enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
-        <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>Habilitar resposta automática por IA (global)</span>
-      </label>
-      <label className="flex items-start gap-3 cursor-pointer pl-6 -mt-2">
-        <input type="checkbox" checked={config.default_conversation_ai !== false} onChange={(e) => set({ default_conversation_ai: e.target.checked })} className="w-4 h-4 accent-cyan-400 mt-0.5" />
-        <div>
-          <span className="text-sm block" style={{ color: 'var(--inunda-text)' }}>Novas conversas iniciam com IA <strong>ligada</strong></span>
-          <span className="text-xs block mt-0.5" style={{ color: 'var(--inunda-text-faded)' }}>
-            Desmarque pra testar — você ativa a IA manualmente conversa por conversa via botão 🤖 no header
-          </span>
-        </div>
-      </label>
-      <Field label="Provider">
-        <select value={config.provider} onChange={(e) => set({ provider: e.target.value })} className={inputCls}>
-          <option value="none">— Nenhum —</option>
-          <option value="openai">OpenAI</option>
-          <option value="anthropic">Anthropic</option>
-        </select>
-      </Field>
-      <Field label={`API Key${config.has_key ? ' (já configurada — deixe vazio pra manter)' : ''}`}>
-        <div className="flex gap-2">
-          <input type="password" placeholder="sk-..." value={config.api_key || ''}
-            onChange={(e) => set({ api_key: e.target.value })}
-            className={`${inputCls} font-mono-inunda flex-1`} />
-          <button type="button"
-            onClick={() => loadModels(config.provider, config.api_key)}
-            disabled={loadingModels || config.provider === 'none' || (!config.api_key && !config.has_key)}
-            title="Buscar modelos disponíveis"
-            className="text-xs px-3 py-2 rounded-lg border whitespace-nowrap disabled:opacity-40"
-            style={{ borderColor: 'var(--inunda-border)', color: 'var(--inunda-cyan)' }}>
-            {loadingModels ? '⏳' : '🔄 Listar modelos'}
-          </button>
-        </div>
-      </Field>
-      <Field label="Modelo">
-        {models.length > 0 ? (
-          <select value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
-            className={`${inputCls} font-mono-inunda`}>
-            <option value="">— Selecione —</option>
-            {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-        ) : (
-          <input placeholder={config.provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini'}
-            value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
-            className={`${inputCls} font-mono-inunda`} />
-        )}
-        {modelsErr && <p className="text-[11px] mt-1" style={{ color: '#fca5a5' }}>{modelsErr}</p>}
-        {models.length > 0 && (
-          <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
-            {models.length} modelos carregados
-          </p>
-        )}
-      </Field>
-      <Field label="System prompt">
-        <textarea rows={5} placeholder="Voce e atendente da..."
-          value={config.system_prompt || ''} onChange={(e) => set({ system_prompt: e.target.value })}
-          className={`${inputCls} resize-y`} />
-      </Field>
-      <div className="grid grid-cols-3 gap-3">
-        <Field label="Pausa (s)"><input type="number" value={config.pause_seconds ?? 600} onChange={(e) => set({ pause_seconds: parseInt(e.target.value || '0') })} className={inputCls} /></Field>
-        <Field label="Max tokens"><input type="number" value={config.max_tokens ?? 1024} onChange={(e) => set({ max_tokens: parseInt(e.target.value || '1024') })} className={inputCls} /></Field>
-        <Field label="Temperature"><input type="number" step="0.1" value={config.temperature ?? 0.7} onChange={(e) => set({ temperature: parseFloat(e.target.value || '0.7') })} className={inputCls} /></Field>
+    <div className="space-y-4">
+      {/* Sub-tabs config | knowledge */}
+      <div className="flex gap-1 border-b" style={{ borderColor: 'var(--inunda-border)' }}>
+        <button onClick={() => setTab('config')}
+          className="px-3 py-1.5 text-sm border-b-2"
+          style={{
+            color: tab === 'config' ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+            borderColor: tab === 'config' ? 'var(--inunda-cyan)' : 'transparent',
+          }}>⚙️ Config</button>
+        <button onClick={() => setTab('knowledge')}
+          className="px-3 py-1.5 text-sm border-b-2"
+          style={{
+            color: tab === 'knowledge' ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+            borderColor: tab === 'knowledge' ? 'var(--inunda-cyan)' : 'transparent',
+          }}>📚 Conhecimento</button>
       </div>
-      {/* Seguranca anti-ban */}
-      <div className="border-t pt-4 mt-4 space-y-3" style={{ borderColor: 'var(--inunda-border)' }}>
-        <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>
-          🛡 Segurança WhatsApp (anti-ban)
-        </p>
-        <Field label="Máx. mensagens por minuto (por caixa)">
-          <input type="number" min={1} max={60} value={config.max_msgs_per_minute ?? 15}
-            onChange={(e) => set({ max_msgs_per_minute: parseInt(e.target.value || '15') })}
-            className={inputCls} />
-          <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
-            Recomendado: 10-15 pra números novos, até 25-30 pra contas antigas. Atinge o limite → IA pula resposta.
-          </p>
-        </Field>
 
-        <Field label="Palavras de opt-out (cliente diz isso → IA é desativada nessa conversa)">
-          <textarea rows={2} value={config.opt_out_keywords || ''}
-            onChange={(e) => set({ opt_out_keywords: e.target.value })}
-            placeholder="parar, stop, descadastrar, ..."
-            className={`${inputCls} resize-y`} />
-          <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
-            Separe por vírgula. Match parcial e case-insensitive (sem acentos).
-          </p>
-        </Field>
+      {tab === 'config' && (
+        <div className="space-y-4 max-w-2xl">
+          {err && <Notice type="error">{err}</Notice>}
+          {ok && <Notice type="success">{ok}</Notice>}
 
-        <label className="flex items-center gap-3 cursor-pointer">
-          <input type="checkbox" checked={!!config.business_hours_enabled}
-            onChange={(e) => set({ business_hours_enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
-          <span className="text-sm" style={{ color: 'var(--inunda-text)' }}>Limitar horário comercial (fora do horário, IA não responde)</span>
-        </label>
-        {config.business_hours_enabled && (
-          <div className="grid grid-cols-3 gap-3 pl-7">
-            <Field label="Início"><input type="time" value={config.business_hours_start || '08:00'}
-              onChange={(e) => set({ business_hours_start: e.target.value })} className={inputCls} /></Field>
-            <Field label="Fim"><input type="time" value={config.business_hours_end || '22:00'}
-              onChange={(e) => set({ business_hours_end: e.target.value })} className={inputCls} /></Field>
-            <Field label="Fuso">
-              <select value={config.business_hours_timezone || 'America/Sao_Paulo'}
-                onChange={(e) => set({ business_hours_timezone: e.target.value })} className={inputCls}>
-                <option value="America/Sao_Paulo">Brasília (BRT)</option>
-                <option value="America/Recife">Recife (BRT)</option>
-                <option value="America/Manaus">Manaus (AMT)</option>
-                <option value="America/Belem">Belém (BRT)</option>
-                <option value="America/Rio_Branco">Rio Branco (ACT)</option>
-                <option value="UTC">UTC</option>
+          <Field label="Nome da IA (interno — usado nos logs)">
+            <input value={config.name || ''} onChange={(e) => set({ name: e.target.value })}
+              placeholder="Ex: Comercial, Suporte, Atendente noturno..."
+              className={inputCls} />
+          </Field>
+
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input type="checkbox" checked={!!config.enabled} onChange={(e) => set({ enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
+            <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>Habilitar IA nesta caixa</span>
+          </label>
+          <label className="flex items-start gap-3 cursor-pointer pl-6 -mt-2">
+            <input type="checkbox" checked={config.default_conversation_ai !== false} onChange={(e) => set({ default_conversation_ai: e.target.checked })} className="w-4 h-4 accent-cyan-400 mt-0.5" />
+            <div>
+              <span className="text-sm block" style={{ color: 'var(--inunda-text)' }}>Novas conversas iniciam com IA <strong>ligada</strong></span>
+              <span className="text-xs block mt-0.5" style={{ color: 'var(--inunda-text-faded)' }}>
+                Desmarque pra testar — você ativa a IA manualmente conversa por conversa via botão 🤖 no header
+              </span>
+            </div>
+          </label>
+          <Field label="Provider">
+            <select value={config.provider} onChange={(e) => set({ provider: e.target.value })} className={inputCls}>
+              <option value="none">— Nenhum —</option>
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+            </select>
+          </Field>
+          <Field label={`API Key${config.has_key ? ' (já configurada — deixe vazio pra manter)' : ''}`}>
+            <div className="flex gap-2">
+              <input type="password" placeholder="sk-..." value={config.api_key || ''}
+                onChange={(e) => set({ api_key: e.target.value })}
+                className={`${inputCls} font-mono-inunda flex-1`} />
+              <button type="button"
+                onClick={() => loadModels(config.provider, config.api_key)}
+                disabled={loadingModels || config.provider === 'none' || (!config.api_key && !config.has_key)}
+                title="Buscar modelos disponíveis"
+                className="text-xs px-3 py-2 rounded-lg border whitespace-nowrap disabled:opacity-40"
+                style={{ borderColor: 'var(--inunda-border)', color: 'var(--inunda-cyan)' }}>
+                {loadingModels ? '⏳' : '🔄 Listar modelos'}
+              </button>
+            </div>
+          </Field>
+          <Field label="Modelo">
+            {models.length > 0 ? (
+              <select value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
+                className={`${inputCls} font-mono-inunda`}>
+                <option value="">— Selecione —</option>
+                {models.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
-            </Field>
+            ) : (
+              <input placeholder={config.provider === 'anthropic' ? 'claude-3-5-sonnet-20241022' : 'gpt-4o-mini'}
+                value={config.model || ''} onChange={(e) => set({ model: e.target.value })}
+                className={`${inputCls} font-mono-inunda`} />
+            )}
+            {modelsErr && <p className="text-[11px] mt-1" style={{ color: '#fca5a5' }}>{modelsErr}</p>}
+            {models.length > 0 && (
+              <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                {models.length} modelos carregados
+              </p>
+            )}
+          </Field>
+          <Field label="System prompt (contexto exclusivo desta caixa)">
+            <textarea rows={5} placeholder="Voce e atendente da..."
+              value={config.system_prompt || ''} onChange={(e) => set({ system_prompt: e.target.value })}
+              className={`${inputCls} resize-y`} />
+          </Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Pausa (s)"><input type="number" value={config.pause_seconds ?? 600} onChange={(e) => set({ pause_seconds: parseInt(e.target.value || '0') })} className={inputCls} /></Field>
+            <Field label="Max tokens"><input type="number" value={config.max_tokens ?? 1024} onChange={(e) => set({ max_tokens: parseInt(e.target.value || '1024') })} className={inputCls} /></Field>
+            <Field label="Temperature"><input type="number" step="0.1" value={config.temperature ?? 0.7} onChange={(e) => set({ temperature: parseFloat(e.target.value || '0.7') })} className={inputCls} /></Field>
           </div>
-        )}
-      </div>
 
-      <button onClick={save} disabled={saving} className={btnPrimary}>{saving ? 'Salvando…' : 'Salvar'}</button>
+          <div className="border-t pt-4 mt-4 space-y-3" style={{ borderColor: 'var(--inunda-border)' }}>
+            <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>
+              🛡 Segurança WhatsApp (anti-ban)
+            </p>
+            <Field label="Máx. mensagens por minuto (desta caixa)">
+              <input type="number" min={1} max={60} value={config.max_msgs_per_minute ?? 15}
+                onChange={(e) => set({ max_msgs_per_minute: parseInt(e.target.value || '15') })}
+                className={inputCls} />
+              <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                Recomendado: 10-15 pra números novos, até 25-30 pra contas antigas. Atinge o limite → IA pula resposta.
+              </p>
+            </Field>
+
+            <Field label="Palavras de opt-out (cliente diz isso → IA é desativada nessa conversa)">
+              <textarea rows={2} value={config.opt_out_keywords || ''}
+                onChange={(e) => set({ opt_out_keywords: e.target.value })}
+                placeholder="parar, stop, descadastrar, ..."
+                className={`${inputCls} resize-y`} />
+              <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                Separe por vírgula. Match parcial e case-insensitive (sem acentos).
+              </p>
+            </Field>
+
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input type="checkbox" checked={!!config.business_hours_enabled}
+                onChange={(e) => set({ business_hours_enabled: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
+              <span className="text-sm" style={{ color: 'var(--inunda-text)' }}>Limitar horário comercial (fora do horário, IA não responde)</span>
+            </label>
+            {config.business_hours_enabled && (
+              <div className="grid grid-cols-3 gap-3 pl-7">
+                <Field label="Início"><input type="time" value={config.business_hours_start || '08:00'}
+                  onChange={(e) => set({ business_hours_start: e.target.value })} className={inputCls} /></Field>
+                <Field label="Fim"><input type="time" value={config.business_hours_end || '22:00'}
+                  onChange={(e) => set({ business_hours_end: e.target.value })} className={inputCls} /></Field>
+                <Field label="Fuso">
+                  <select value={config.business_hours_timezone || 'America/Sao_Paulo'}
+                    onChange={(e) => set({ business_hours_timezone: e.target.value })} className={inputCls}>
+                    <option value="America/Sao_Paulo">Brasília (BRT)</option>
+                    <option value="America/Recife">Recife (BRT)</option>
+                    <option value="America/Manaus">Manaus (AMT)</option>
+                    <option value="America/Belem">Belém (BRT)</option>
+                    <option value="America/Rio_Branco">Rio Branco (ACT)</option>
+                    <option value="UTC">UTC</option>
+                  </select>
+                </Field>
+              </div>
+            )}
+          </div>
+
+          <button onClick={save} disabled={saving} className={btnPrimary}>{saving ? 'Salvando…' : 'Salvar config'}</button>
+        </div>
+      )}
+
+      {tab === 'knowledge' && <KnowledgePanel instanceId={instanceId} />}
     </div>
   );
 }
 
-// ─── Tab Knowledge ─────────────────────────────────────────────────
-function TabKnowledge() {
+// Painel de Knowledge Base de UMA caixa
+function KnowledgePanel({ instanceId }) {
   const [items, setItems] = useState([]);
   const [url, setUrl] = useState('');
   const [text, setText] = useState({ title: '', content: '' });
   const [err, setErr] = useState('');
-  function load() { api.get('/knowledge').then((r) => setItems(r.data)).catch(() => {}); }
-  useEffect(load, []);
+  function load() { api.get('/knowledge', { params: { instance_id: instanceId } }).then((r) => setItems(r.data)).catch(() => {}); }
+  useEffect(load, [instanceId]);
 
   async function uploadFile(f) {
     if (!f) return;
     setErr('');
-    const form = new FormData(); form.append('file', f);
+    const form = new FormData(); form.append('file', f); form.append('instance_id', instanceId);
     try { await api.post('/knowledge/file', form, { headers: { 'Content-Type': 'multipart/form-data' } }); load(); }
     catch (e) { setErr(e.response?.data?.error || 'Erro ao subir'); }
   }
   async function addUrl() {
     if (!url.trim()) return;
     setErr('');
-    try { await api.post('/knowledge/url', { url, title: url }); setUrl(''); load(); }
+    try { await api.post('/knowledge/url', { url, title: url, instance_id: instanceId }); setUrl(''); load(); }
     catch (e) { setErr(e.response?.data?.error || 'Erro'); }
   }
   async function addText() {
     if (!text.title || !text.content) return;
     setErr('');
-    try { await api.post('/knowledge/text', text); setText({ title: '', content: '' }); load(); }
+    try { await api.post('/knowledge/text', { ...text, instance_id: instanceId }); setText({ title: '', content: '' }); load(); }
     catch (e) { setErr(e.response?.data?.error || 'Erro'); }
   }
   async function del(id) {
@@ -412,8 +525,8 @@ function TabKnowledge() {
   return (
     <div className="space-y-5 max-w-2xl">
       <Notice type="info">
-        Os itens abaixo são injetados no prompt da IA. Ela usa como base ao responder o cliente.
-        MVP: suporta arquivos .txt / .md / .csv / .json, URLs públicas e texto livre.
+        Knowledge específico desta caixa — injetado só no prompt da IA dela.
+        Suporta arquivos .txt / .md / .csv / .json, URLs públicas e texto livre.
       </Notice>
       {err && <Notice type="error">{err}</Notice>}
 
@@ -446,7 +559,7 @@ function TabKnowledge() {
       </div>
 
       <div className="space-y-2">
-        {items.length === 0 && <p className="text-sm italic" style={{ color: 'var(--inunda-text-faded)' }}>Nenhum item ainda</p>}
+        {items.length === 0 && <p className="text-sm italic" style={{ color: 'var(--inunda-text-faded)' }}>Nenhum item ainda nesta caixa</p>}
         {items.map((it) => (
           <div key={it.id} className="rounded-lg border p-3 flex items-start gap-3"
             style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
@@ -658,7 +771,11 @@ function Field({ label, children }) {
 // ─── Page ──────────────────────────────────────────────────────────
 export default function Settings() {
   const [tab, setTab] = useState(() => {
-    try { return localStorage.getItem('settings_tab') || 'app'; } catch { return 'app'; }
+    try {
+      const saved = localStorage.getItem('settings_tab') || 'app';
+      // Migra valor antigo 'knowledge' (removida) → ai
+      return saved === 'knowledge' ? 'ai' : saved;
+    } catch { return 'app'; }
   });
   useEffect(() => { try { localStorage.setItem('settings_tab', tab); } catch {} }, [tab]);
 
@@ -684,10 +801,9 @@ export default function Settings() {
         </div>
 
         {/* Cada tab é renderizada inteira (não keep-mount pra simplicidade) */}
-        {tab === 'app'       && <TabApp />}
-        {tab === 'ai'        && <TabAI />}
-        {tab === 'knowledge' && <TabKnowledge />}
-        {tab === 'agents'    && <TabAgents />}
+        {tab === 'app'    && <TabApp />}
+        {tab === 'ai'     && <TabAI />}
+        {tab === 'agents' && <TabAgents />}
       </div>
     </div>
   );

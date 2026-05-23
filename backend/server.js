@@ -298,6 +298,58 @@ async function runMigrations() {
   // Indica se usuario fez opt-out — pausa IA naquela conversation pra sempre
   await safe(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS opted_out BOOLEAN DEFAULT FALSE`);
 
+  // ── IA por caixa: cada whatsapp_instance pode ter sua propria config + nome ──
+  // Migracao do esquema antigo (1 config por company) pra novo (1 config por caixa).
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS id SERIAL`);
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS instance_id INTEGER REFERENCES whatsapp_instances(id) ON DELETE CASCADE`);
+  await safe(`ALTER TABLE ai_configs ADD COLUMN IF NOT EXISTS name VARCHAR(120)`);
+  // Troca a PK de company_id pra id
+  await safe(`ALTER TABLE ai_configs DROP CONSTRAINT IF EXISTS ai_configs_pkey`);
+  await safe(`ALTER TABLE ai_configs ADD PRIMARY KEY (id)`);
+  // Garante 1 config por caixa
+  await safe(`ALTER TABLE ai_configs ADD CONSTRAINT ai_configs_instance_unique UNIQUE (instance_id)`);
+  // Replica config legacy (instance_id IS NULL) pra cada caixa da company
+  await safe(`
+    INSERT INTO ai_configs (
+      company_id, instance_id, name, provider, api_key, model, system_prompt, pause_seconds, enabled,
+      max_tokens, temperature, default_conversation_ai, max_msgs_per_minute, opt_out_keywords,
+      business_hours_enabled, business_hours_start, business_hours_end, business_hours_timezone, updated_at
+    )
+    SELECT
+      ac.company_id, wi.id,
+      COALESCE(wi.display_name, 'IA') AS name,
+      ac.provider, ac.api_key, ac.model, ac.system_prompt, ac.pause_seconds, ac.enabled,
+      ac.max_tokens, ac.temperature, ac.default_conversation_ai, ac.max_msgs_per_minute, ac.opt_out_keywords,
+      ac.business_hours_enabled, ac.business_hours_start, ac.business_hours_end, ac.business_hours_timezone, NOW()
+    FROM ai_configs ac
+    JOIN whatsapp_instances wi ON wi.company_id = ac.company_id
+    WHERE ac.instance_id IS NULL
+    ON CONFLICT (instance_id) DO NOTHING
+  `);
+  // Remove rows legacy (company-only) — somente se ja tem instance migrada
+  await safe(`
+    DELETE FROM ai_configs ac
+    WHERE ac.instance_id IS NULL
+      AND EXISTS (SELECT 1 FROM whatsapp_instances wi WHERE wi.company_id = ac.company_id)
+  `);
+
+  // ── Knowledge base por caixa ────────────────────────────────────────
+  await safe(`ALTER TABLE ai_knowledge ADD COLUMN IF NOT EXISTS instance_id INTEGER REFERENCES whatsapp_instances(id) ON DELETE CASCADE`);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_ai_knowledge_instance ON ai_knowledge(instance_id)`);
+  // Replica KB legacy pra cada caixa
+  await safe(`
+    INSERT INTO ai_knowledge (company_id, instance_id, kind, title, source, mime, size_bytes, content, created_by)
+    SELECT k.company_id, wi.id, k.kind, k.title, k.source, k.mime, k.size_bytes, k.content, k.created_by
+    FROM ai_knowledge k
+    JOIN whatsapp_instances wi ON wi.company_id = k.company_id
+    WHERE k.instance_id IS NULL
+  `);
+  await safe(`
+    DELETE FROM ai_knowledge k
+    WHERE k.instance_id IS NULL
+      AND EXISTS (SELECT 1 FROM whatsapp_instances wi WHERE wi.company_id = k.company_id)
+  `);
+
   // ── Provider configs (Evolution / Z-API / Oficial) ──────────────────
   await safe(`
     CREATE TABLE IF NOT EXISTS provider_configs (
