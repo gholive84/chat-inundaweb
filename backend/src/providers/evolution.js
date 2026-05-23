@@ -114,6 +114,17 @@ async function getMessageMediaBase64(instanceName, msg) {
   }
 }
 
+// Envia indicador de presença (digitando.../gravando.../pausado)
+// presence: 'composing' | 'recording' | 'paused' | 'available'
+async function sendPresence(instanceName, phone, presence = 'composing', delay = 1000) {
+  try {
+    const number = String(phone).replace(/\D/g, '');
+    await http.post(`/chat/sendPresence/${instanceName}`, {
+      number, presence, delay,
+    });
+  } catch (e) { /* silent — nao critico */ }
+}
+
 async function fetchProfilePicture(instanceName, phone) {
   try {
     const number = String(phone).replace(/\D/g, '');
@@ -129,6 +140,7 @@ module.exports = {
   deleteInstance,
   sendText,
   sendMedia,
+  sendPresence,
   getMessageMediaBase64,
   fetchProfilePicture,
 };

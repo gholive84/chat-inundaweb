@@ -9,6 +9,61 @@ const PROVIDERS = { openai };
 // Quantas mensagens do historico mandar pro modelo
 const HISTORY_LIMIT = 20;
 
+// Boas praticas WhatsApp
+const MAX_CHARS_PER_MSG = 3800;    // WhatsApp aceita ~4096, deixamos margem
+const MIN_HUMAN_DELAY_MS = 600;     // delay minimo antes de responder
+const CHARS_PER_MS = 1 / 30;         // ~30ms por char digitado (≈400 wpm)
+const MAX_TYPING_MS = 5000;          // cap do delay 'digitando'
+const PAUSE_BETWEEN_CHUNKS_MS = 800; // pausa entre mensagens consecutivas
+
+// System prompt extra que damos pra IA sempre — diretrizes de boas praticas
+const BASE_GUIDELINES = `\n\n# Diretrizes de comunicacao no WhatsApp:\n` +
+  `- Seja conciso. Respostas curtas funcionam melhor.\n` +
+  `- Use linguagem natural e amigavel, como em conversa real.\n` +
+  `- Quebre em paragrafos curtos (1-3 frases cada).\n` +
+  `- Evite blocos de texto longos — divida em mensagens menores quando preciso.\n` +
+  `- Use *negrito* (entre asteriscos) pra destacar pontos importantes (WhatsApp renderiza).\n` +
+  `- Nao use markdown complexo (tabelas, headers H1-H6, blockquotes).\n` +
+  `- Emojis com moderacao quando agregar.\n` +
+  `- Se a pergunta exigir resposta tecnica longa, pergunte se o cliente quer detalhes ou prefere resumo.\n`;
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+/**
+ * Quebra um texto em chunks <= MAX_CHARS preservando paragrafos.
+ * Tenta cortar em quebras de linha duplas, depois simples, depois espacos.
+ */
+function splitMessage(text, maxChars = MAX_CHARS_PER_MSG) {
+  if (!text) return [];
+  if (text.length <= maxChars) return [text];
+
+  const chunks = [];
+  let remaining = text.trim();
+
+  while (remaining.length > maxChars) {
+    let cut = maxChars;
+    // procura quebra de paragrafo dentro do limite
+    const para = remaining.lastIndexOf('\n\n', maxChars);
+    if (para > maxChars * 0.4) cut = para;
+    else {
+      const ln = remaining.lastIndexOf('\n', maxChars);
+      if (ln > maxChars * 0.5) cut = ln;
+      else {
+        const sp = remaining.lastIndexOf(' ', maxChars);
+        if (sp > maxChars * 0.6) cut = sp;
+      }
+    }
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+function typingDelayFor(textLen) {
+  return Math.min(MAX_TYPING_MS, MIN_HUMAN_DELAY_MS + textLen / CHARS_PER_MS);
+}
+
 async function maybeRespond({ conversationId, app }) {
   try {
     // 1) Pega contexto da conversa + config AI da company
@@ -37,12 +92,13 @@ async function maybeRespond({ conversationId, app }) {
     if (!adapter) return { skipped: `unknown provider ${C.provider}` };
     if (!C.api_key) return { skipped: 'no api_key' };
 
-    // 1.5) Carrega knowledge base da company pra injetar no system prompt
+    // 1.5) Carrega knowledge base + adiciona diretrizes WhatsApp ao system prompt
     const { rows: kb } = await pool.query(
       `SELECT title, content FROM ai_knowledge WHERE company_id=$1 ORDER BY created_at ASC LIMIT 20`,
       [C.company_id]
     );
     let systemPrompt = C.system_prompt || 'Voce e um atendente automatico. Seja cordial e breve.';
+    systemPrompt += BASE_GUIDELINES;
     if (kb.length > 0) {
       const kbText = kb.map((k) => `### ${k.title}\n${k.content}`).join('\n\n---\n\n');
       systemPrompt += `\n\n# Base de conhecimento (use como referencia ao responder):\n\n${kbText}`;
@@ -74,39 +130,59 @@ async function maybeRespond({ conversationId, app }) {
 
     if (!reply || !reply.trim()) return { skipped: 'empty response' };
 
-    // 4) Salva como 'ai' e envia via Evolution
-    const { rows: ins } = await pool.query(`
-      INSERT INTO messages (conversation_id, from_me, author_type, type, body, status)
-      VALUES ($1, TRUE, 'ai', 'text', $2, 'pending') RETURNING id
-    `, [conversationId, reply]);
-    const msgId = ins[0].id;
+    // 4) Quebra em chunks (boas praticas WhatsApp — max ~4000 chars/msg)
+    const chunks = splitMessage(reply);
+    const io = app?.get('io');
+    const lastIds = [];
 
-    try {
-      const sent = await evolution.sendText(C.instance_name, C.phone, reply);
-      await pool.query(
-        'UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',
-        ['sent', sent?.id || null, msgId]
-      );
-    } catch (sendErr) {
-      console.error('AI: send failed', sendErr.message);
-      await pool.query(
-        'UPDATE messages SET status=$1, error=$2 WHERE id=$3',
-        ['failed', sendErr.message?.slice(0, 500) || 'send failed', msgId]
-      );
-      return { error: 'send failed' };
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+
+      // Indicador de "digitando..." + delay humano antes de enviar
+      const typingMs = typingDelayFor(chunk.length);
+      try { await evolution.sendPresence(C.instance_name, C.phone, 'composing', typingMs); } catch {}
+      await sleep(typingMs);
+
+      // Salva como pending
+      const { rows: ins } = await pool.query(`
+        INSERT INTO messages (conversation_id, from_me, author_type, type, body, status)
+        VALUES ($1, TRUE, 'ai', 'text', $2, 'pending') RETURNING id
+      `, [conversationId, chunk]);
+      const msgId = ins[0].id;
+      lastIds.push(msgId);
+
+      try {
+        const sent = await evolution.sendText(C.instance_name, C.phone, chunk);
+        await pool.query(
+          'UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',
+          ['sent', sent?.id || null, msgId]
+        );
+      } catch (sendErr) {
+        console.error('AI: send failed', sendErr.message);
+        await pool.query(
+          'UPDATE messages SET status=$1, error=$2 WHERE id=$3',
+          ['failed', sendErr.message?.slice(0, 500) || 'send failed', msgId]
+        );
+        return { error: 'send failed', sentBefore: i };
+      }
+
+      // Atualiza conversation com a ultima
+      await pool.query(`
+        UPDATE conversations SET last_message_at = NOW(), last_message_preview = $1
+        WHERE id = $2
+      `, [chunk.slice(0, 200), conversationId]);
+
+      io?.to(`conv:${conversationId}`).emit('message:new', { conversationId, message: { id: msgId, body: chunk, from_me: true, author_type: 'ai' } });
+      io?.to(`company:${C.company_id}`).emit('conversation:update', { conversationId });
+
+      // Pausa entre chunks (nao no ultimo)
+      if (i < chunks.length - 1) await sleep(PAUSE_BETWEEN_CHUNKS_MS);
     }
 
-    await pool.query(`
-      UPDATE conversations SET last_message_at = NOW(), last_message_preview = $1
-      WHERE id = $2
-    `, [reply.slice(0, 200), conversationId]);
+    // 5) Marca como "pausado" (encerra typing indicator)
+    try { await evolution.sendPresence(C.instance_name, C.phone, 'paused'); } catch {}
 
-    // 5) Notifica clientes
-    const io = app?.get('io');
-    io?.to(`conv:${conversationId}`).emit('message:new', { conversationId, message: { id: msgId, body: reply, from_me: true, author_type: 'ai' } });
-    io?.to(`company:${C.company_id}`).emit('conversation:update', { conversationId });
-
-    return { ok: true, msgId };
+    return { ok: true, msgIds: lastIds, chunks: chunks.length };
   } catch (err) {
     console.error('AI responder error:', err.response?.data || err.message);
     return { error: err.message };
