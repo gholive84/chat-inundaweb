@@ -102,6 +102,7 @@ async function runMigrations() {
   // Empresas: opcoes de configuracao
   await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS sign_messages BOOLEAN DEFAULT FALSE`);
   await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS signature_format VARCHAR(50) DEFAULT 'bold'`); // bold | brackets | plain
+  await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_instances INTEGER DEFAULT 1`); // teto de caixas WhatsApp por empresa
 
   // ── User memberships em multiplas companies ──────────────────────────
   // Um user pode ser owner de varias empresas. A coluna company_id em users

@@ -7,6 +7,7 @@ export default function Connect() {
   const isOwner = user?.role === 'owner';
   const [instances, setInstances] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [limits, setLimits] = useState({ max: 1, used: 0, remaining: 1 });
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [error, setError] = useState('');
@@ -16,6 +17,7 @@ export default function Connect() {
 
   function load() {
     api.get('/instances').then((r) => setInstances(r.data)).catch(() => {});
+    api.get('/instances/limits').then((r) => setLimits(r.data)).catch(() => {});
   }
   useEffect(load, []);
   useEffect(() => { api.get('/companies/agents').then((r) => setAgents(r.data)).catch(() => {}); }, []);
@@ -91,20 +93,35 @@ export default function Connect() {
         {isOwner && (
           <div className="rounded-xl border p-4 mb-5"
             style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
-            <p className="text-xs uppercase tracking-wider font-semibold mb-2" style={{ color: 'var(--inunda-text-faded)' }}>
-              + Nova caixa
-            </p>
-            <div className="flex gap-2">
-              <input value={newName} onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') createInstance(); }}
-                placeholder="Ex: Comercial, Financeiro, Suporte..."
-                className="flex-1 bg-white/5 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-400"
-                style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
-              <button onClick={createInstance} disabled={creating || !newName.trim()}
-                className="btn-primary px-4 py-2 rounded-lg text-sm">
-                {creating ? '…' : '+ Conectar'}
-              </button>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>
+                + Nova caixa
+              </p>
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-mono-inunda"
+                style={{
+                  background: limits.remaining === 0 ? 'rgba(249,115,22,0.15)' : 'var(--inunda-cyan-faint)',
+                  color: limits.remaining === 0 ? '#fb923c' : 'var(--inunda-cyan)',
+                }}>
+                {limits.used}/{limits.max} caixas
+              </span>
             </div>
+            {limits.remaining === 0 ? (
+              <p className="text-xs px-3 py-2 rounded-lg" style={{ color: '#fb923c', background: 'rgba(249,115,22,0.08)' }}>
+                Limite de caixas atingido para sua empresa. Para conectar mais números, contate o administrador da plataforma.
+              </p>
+            ) : (
+              <div className="flex gap-2">
+                <input value={newName} onChange={(e) => setNewName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && limits.remaining > 0) createInstance(); }}
+                  placeholder="Ex: Comercial, Financeiro, Suporte..."
+                  className="flex-1 bg-white/5 border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-cyan-400"
+                  style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+                <button onClick={createInstance} disabled={creating || !newName.trim()}
+                  className="btn-primary px-4 py-2 rounded-lg text-sm">
+                  {creating ? '…' : '+ Conectar'}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

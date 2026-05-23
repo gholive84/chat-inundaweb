@@ -23,6 +23,24 @@ router.get('/', authCompany, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
 });
 
+// Limite + uso atual de caixas pra empresa do usuario logado
+router.get('/limits', authCompany, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT COALESCE(max_instances, 1) AS max_instances,
+              (SELECT COUNT(*) FROM whatsapp_instances WHERE company_id=c.id) AS used
+       FROM companies c WHERE id=$1`,
+      [req.user.companyId]
+    );
+    const r = rows[0] || { max_instances: 1, used: 0 };
+    res.json({
+      max: parseInt(r.max_instances),
+      used: parseInt(r.used),
+      remaining: Math.max(0, parseInt(r.max_instances) - parseInt(r.used)),
+    });
+  } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
+});
+
 // Atribuir/remover agente a uma instancia
 router.post('/:id/agents', authCompany, authRole('owner'), async (req, res) => {
   try {
@@ -71,9 +89,26 @@ router.put('/:id', authCompany, authRole('owner'), async (req, res) => {
 });
 
 // Cria uma instancia + chama o provider pra inicializar + retorna QR
-router.post('/', authCompany, authRole('owner', 'agent'), async (req, res) => {
+// Apenas owners criam caixas. Limite por empresa via companies.max_instances (config no Super Admin).
+router.post('/', authCompany, authRole('owner'), async (req, res) => {
   try {
     const { display_name, provider = 'evolution' } = req.body;
+
+    // Checa limite ANTES de criar instancia/chamar provider
+    const { rows: lim } = await pool.query(
+      `SELECT COALESCE(max_instances, 1) AS max_instances,
+              (SELECT COUNT(*) FROM whatsapp_instances WHERE company_id=c.id) AS used
+       FROM companies c WHERE id=$1`,
+      [req.user.companyId]
+    );
+    const maxAllowed = parseInt(lim[0]?.max_instances ?? 1);
+    const usedNow = parseInt(lim[0]?.used ?? 0);
+    if (usedNow >= maxAllowed) {
+      return res.status(403).json({
+        error: `Limite de caixas atingido (${usedNow}/${maxAllowed}). Contate o administrador da plataforma para aumentar.`,
+      });
+    }
+
     const instanceName = `co${req.user.companyId}-${crypto.randomBytes(4).toString('hex')}`;
     const webhookToken = crypto.randomBytes(16).toString('hex');
 

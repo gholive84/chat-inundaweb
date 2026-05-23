@@ -12,7 +12,8 @@ router.use(authSuperAdmin);
 router.get('/companies', async (req, res) => {
   try {
     const { rows } = await pool.query(`
-      SELECT c.id, c.slug, c.name, c.email, c.active, c.max_agents, c.created_at,
+      SELECT c.id, c.slug, c.name, c.email, c.active, c.max_agents,
+             COALESCE(c.max_instances, 1) AS max_instances, c.created_at,
         (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id) AS users_count,
         (SELECT COUNT(*) FROM conversations cv WHERE cv.company_id = c.id) AS conversations_count,
         (SELECT COUNT(*) FROM whatsapp_instances i WHERE i.company_id = c.id) AS instances_count
@@ -25,10 +26,10 @@ router.get('/companies', async (req, res) => {
 
 router.put('/companies/:id', async (req, res) => {
   try {
-    const { name, email, active, max_agents } = req.body;
+    const { name, email, active, max_agents, max_instances } = req.body;
     await pool.query(
-      'UPDATE companies SET name=$1, email=$2, active=$3, max_agents=$4 WHERE id=$5',
-      [name, email || null, active ?? true, max_agents ?? 10, req.params.id]
+      'UPDATE companies SET name=$1, email=$2, active=$3, max_agents=$4, max_instances=$5 WHERE id=$6',
+      [name, email || null, active ?? true, max_agents ?? 10, max_instances ?? 1, req.params.id]
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }

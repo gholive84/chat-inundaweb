@@ -40,7 +40,7 @@ function CompaniesTab() {
         <table className="w-full text-sm">
           <thead>
             <tr>
-              {['Empresa', 'Slug', 'Status', 'Users', 'Conv', 'WA', 'Criada', 'Ações'].map((h) => (
+              {['Empresa', 'Slug', 'Status', 'Users', 'Conv', 'WA', 'Limite', 'Criada', 'Ações'].map((h) => (
                 <th key={h} className="px-3 py-2 text-left text-[10px] uppercase tracking-wider font-semibold border-b"
                   style={{ color: 'var(--inunda-text-faded)', borderColor: 'var(--inunda-border)' }}>{h}</th>
               ))}
@@ -63,6 +63,11 @@ function CompaniesTab() {
                 <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--inunda-text-muted)' }}>{c.users_count}</td>
                 <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--inunda-text-muted)' }}>{c.conversations_count}</td>
                 <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--inunda-text-muted)' }}>{c.instances_count}</td>
+                <td className="px-3 py-2.5 text-xs">
+                  <span style={{ color: c.instances_count >= (c.max_instances ?? 1) ? '#f97316' : 'var(--inunda-text-muted)' }}>
+                    {c.instances_count}/{c.max_instances ?? 1}
+                  </span>
+                </td>
                 <td className="px-3 py-2.5 text-xs" style={{ color: 'var(--inunda-text-faded)' }}>
                   {new Date(c.created_at).toLocaleDateString('pt-BR')}
                 </td>
@@ -73,7 +78,7 @@ function CompaniesTab() {
               </tr>
             ))}
             {items.length === 0 && (
-              <tr><td colSpan={8} className="text-center py-10" style={{ color: 'var(--inunda-text-faded)' }}>Nenhuma empresa</td></tr>
+              <tr><td colSpan={9} className="text-center py-10" style={{ color: 'var(--inunda-text-faded)' }}>Nenhuma empresa</td></tr>
             )}
           </tbody>
         </table>
@@ -95,10 +100,22 @@ function CompaniesTab() {
               <input value={editing.email || ''} onChange={(e) => setEditing({ ...editing, email: e.target.value })}
                 className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
             </div>
-            <div>
-              <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>Max agentes</label>
-              <input type="number" value={editing.max_agents ?? 10} onChange={(e) => setEditing({ ...editing, max_agents: parseInt(e.target.value || '10') })}
-                className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>Max agentes</label>
+                <input type="number" min={1} value={editing.max_agents ?? 10} onChange={(e) => setEditing({ ...editing, max_agents: parseInt(e.target.value || '10') })}
+                  className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                  Max caixas WhatsApp
+                </label>
+                <input type="number" min={1} max={50} value={editing.max_instances ?? 1} onChange={(e) => setEditing({ ...editing, max_instances: parseInt(e.target.value || '1') })}
+                  className={inputCls} style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+                <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                  Em uso: {editing.instances_count ?? 0}
+                </p>
+              </div>
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
