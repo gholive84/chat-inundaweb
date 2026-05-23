@@ -4,6 +4,7 @@ const multer = require('multer');
 const { pool } = require('../config/database');
 const { authCompany } = require('../middleware/auth');
 const evolution = require('../providers/evolution');
+const storage = require('../services/storage');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 
@@ -118,13 +119,36 @@ router.post('/:conversationId/media', authCompany, upload.single('file'), async 
     const c = conv[0];
 
     const kind = detectKind(req.file.mimetype);
-    const base64 = req.file.buffer.toString('base64');
+
+    // Tenta subir pro S3 (se configurado). Mantemos URL pra exibir na bolha.
+    let mediaUrl = null;
+    let mediaPayload; // o que mandar pro Evolution: 'url' string ou base64 string
+    let useUrl = false;
+    if (await storage.hasS3(req.user.companyId)) {
+      try {
+        const up = await storage.uploadBuffer({
+          companyId: req.user.companyId,
+          buffer: req.file.buffer,
+          mimetype: req.file.mimetype,
+          filename: req.file.originalname,
+          folder: 'outbound',
+        });
+        mediaUrl = up.url;
+        mediaPayload = up.url;
+        useUrl = true;
+      } catch (e) {
+        console.warn('[s3] upload falhou, fallback pra base64:', e.message);
+        mediaPayload = req.file.buffer.toString('base64');
+      }
+    } else {
+      mediaPayload = req.file.buffer.toString('base64');
+    }
 
     // Salva mensagem pendente
     const { rows: ins } = await pool.query(`
-      INSERT INTO messages (conversation_id, from_me, author_type, author_user_id, type, body, media_mime, media_filename, status)
-      VALUES ($1, TRUE, 'agent', $2, $3, $4, $5, $6, 'pending') RETURNING id
-    `, [c.id, req.user.id, kind, caption, req.file.mimetype, req.file.originalname]);
+      INSERT INTO messages (conversation_id, from_me, author_type, author_user_id, type, body, media_url, media_mime, media_filename, status)
+      VALUES ($1, TRUE, 'agent', $2, $3, $4, $5, $6, $7, 'pending') RETURNING id
+    `, [c.id, req.user.id, kind, caption, mediaUrl, req.file.mimetype, req.file.originalname]);
     const msgId = ins[0].id;
 
     // Pausa IA + auto-assign
@@ -140,7 +164,11 @@ router.post('/:conversationId/media', authCompany, upload.single('file'), async 
     // Envia via Evolution
     try {
       const sent = await evolution.sendMedia(c.instance_name, c.phone, {
-        kind, base64, mimetype: req.file.mimetype, fileName: req.file.originalname, caption,
+        kind,
+        base64: mediaPayload, // Evolution aceita URL ou base64 no mesmo campo
+        mimetype: req.file.mimetype,
+        fileName: req.file.originalname,
+        caption,
       });
       await pool.query(
         'UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',

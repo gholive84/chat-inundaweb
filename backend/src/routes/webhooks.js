@@ -3,6 +3,7 @@ const router = express.Router();
 const { pool } = require('../config/database');
 const aiResponder = require('../services/aiResponder');
 const evolution = require('../providers/evolution');
+const storage = require('../services/storage');
 
 // Webhook do Evolution — endpoint publico, mas valida instance_name + token
 // Evolution chama POST /api/webhooks/evolution/{instance}/{token}
@@ -129,7 +130,8 @@ async function handleIncomingMessage(app, inst, payload) {
   else if (m?.audioMessage){ type = 'audio'; mediaMime = m.audioMessage.mimetype; }
   else if (m?.videoMessage){ type = 'video'; body = m.videoMessage.caption || ''; mediaMime = m.videoMessage.mimetype; }
   else if (m?.documentMessage){ type = 'document'; mediaFilename = m.documentMessage.fileName; mediaMime = m.documentMessage.mimetype; }
-  else if (m?.stickerMessage){ type = 'sticker'; }
+  else if (m?.stickerMessage){ type = 'sticker'; mediaMime = m.stickerMessage?.mimetype || 'image/webp'; }
+  const isMedia = ['image', 'audio', 'video', 'document', 'sticker'].includes(type);
 
   // Insere mensagem (dedup pelo provider_msg_id)
   const providerMsgId = key.id || data.id || null;
@@ -159,6 +161,26 @@ async function handleIncomingMessage(app, inst, payload) {
     const io = app.get('io');
     io?.to(`conv:${convId}`).emit('message:new', { conversationId: convId, message: insertedRow });
     io?.to(`company:${inst.company_id}`).emit('conversation:update', { conversationId: convId });
+
+    // Mídia: tenta baixar e subir pro S3 (assincrono, nao bloqueia)
+    if (isMedia && await storage.hasS3(inst.company_id).catch(() => false)) {
+      setImmediate(async () => {
+        try {
+          const b64 = await evolution.getMessageMediaBase64(inst.instance_name, data);
+          if (!b64) return;
+          const buf = Buffer.from(b64, 'base64');
+          const ext = (mediaMime?.split('/')[1] || 'bin').split(';')[0];
+          const fname = mediaFilename || `${type}-${insertedRow.id}.${ext}`;
+          const up = await storage.uploadBuffer({
+            companyId: inst.company_id,
+            buffer: buf, mimetype: mediaMime || 'application/octet-stream',
+            filename: fname, folder: 'inbound',
+          });
+          await pool.query('UPDATE messages SET media_url=$1 WHERE id=$2', [up.url, insertedRow.id]);
+          io?.to(`conv:${convId}`).emit('message:new', { conversationId: convId });
+        } catch (e) { console.warn('[media→s3] falhou:', e.message); }
+      });
+    }
 
     // Mensagem de contato (não nossa) → tenta resposta da IA (assincrono, fire-and-forget)
     if (!fromMe) {

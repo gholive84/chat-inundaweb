@@ -23,16 +23,46 @@ const TYPE_LABEL = {
   location: { icon: '📍', label: 'Localização' },
 };
 
-function MediaPlaceholder({ type, filename, mime, fromMe }) {
-  const t = TYPE_LABEL[type] || { icon: '📄', label: type };
+function MediaRender({ m, fromMe }) {
+  const t = TYPE_LABEL[m.type] || { icon: '📄', label: m.type };
+  const url = m.media_url;
+
+  if (url && (m.type === 'image' || m.type === 'sticker')) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block">
+        <img src={url} alt={t.label} className="rounded-md max-w-full max-h-64 object-cover" />
+      </a>
+    );
+  }
+  if (url && m.type === 'video') {
+    return <video src={url} controls className="rounded-md max-w-full max-h-64" />;
+  }
+  if (url && m.type === 'audio') {
+    return <audio src={url} controls className="w-full max-w-xs" />;
+  }
+  if (url && m.type === 'document') {
+    return (
+      <a href={url} target="_blank" rel="noreferrer"
+        className={`flex items-center gap-2 px-2 py-1.5 rounded-md hover:underline ${fromMe ? 'bg-black/20' : 'bg-white/[0.04]'}`}>
+        <span className="text-base">📎</span>
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{m.media_filename || 'Documento'}</p>
+          {m.media_mime && <p className="text-[10px] opacity-70">{m.media_mime}</p>}
+        </div>
+      </a>
+    );
+  }
+
+  // Fallback: placeholder (sem url ainda — fica esperando S3 subir)
   return (
     <div className={`flex items-center gap-2 px-2 py-1.5 rounded-md ${fromMe ? 'bg-black/20' : 'bg-white/[0.04]'}`}>
       <span className="text-base">{t.icon}</span>
       <div className="min-w-0">
         <p className="text-sm font-medium">{t.label}</p>
-        {(filename || mime) && (
-          <p className="text-[10px] opacity-70 truncate">{filename || mime}</p>
+        {(m.media_filename || m.media_mime) && (
+          <p className="text-[10px] opacity-70 truncate">{m.media_filename || m.media_mime}</p>
         )}
+        {!url && <p className="text-[10px] opacity-50 italic">processando…</p>}
       </div>
     </div>
   );
@@ -55,7 +85,7 @@ function Bubble({ m }) {
         {fromMe && m.author_type === 'agent' && (
           <p className="text-[10px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">{authorLabel(m)}</p>
         )}
-        {isMedia && <MediaPlaceholder type={m.type} filename={m.media_filename} mime={m.media_mime} fromMe={fromMe} />}
+        {isMedia && <MediaRender m={m} fromMe={fromMe} />}
         {m.body && (
           <p className={`whitespace-pre-wrap leading-snug ${isMedia ? 'mt-1.5' : ''}`}>{m.body}</p>
         )}

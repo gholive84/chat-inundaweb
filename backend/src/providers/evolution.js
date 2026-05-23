@@ -100,6 +100,20 @@ async function sendMedia(instanceName, phone, { kind, base64, mimetype, fileName
   return { id: data?.key?.id || null, raw: data };
 }
 
+// Baixa media descriptografada de uma mensagem
+async function getMessageMediaBase64(instanceName, msg) {
+  try {
+    const { data } = await http.post(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+      message: msg,
+      convertToMp4: false,
+    });
+    return data?.base64 || data?.media || null;
+  } catch (e) {
+    console.warn('[evo] getBase64FromMediaMessage falhou:', e.message);
+    return null;
+  }
+}
+
 async function fetchProfilePicture(instanceName, phone) {
   try {
     const number = String(phone).replace(/\D/g, '');
@@ -115,5 +129,6 @@ module.exports = {
   deleteInstance,
   sendText,
   sendMedia,
+  getMessageMediaBase64,
   fetchProfilePicture,
 };
