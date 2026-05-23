@@ -3,6 +3,7 @@ import EmojiPicker, { EmojiStyle, Theme } from 'emoji-picker-react';
 import api from '../services/api';
 import useSocketStore from '../store/socketStore';
 import useAutoScroll from '../hooks/useAutoScroll';
+import AudioPlayer from './AudioPlayer';
 
 function formatTime(d) {
   return new Date(d).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
@@ -38,7 +39,7 @@ function MediaRender({ m, fromMe }) {
     return <video src={url} controls className="rounded-md max-w-full max-h-64" />;
   }
   if (url && m.type === 'audio') {
-    return <audio src={url} controls className="w-full max-w-xs" />;
+    return <AudioPlayer src={url} fromMe={fromMe} />;
   }
   if (url && m.type === 'document') {
     return (
