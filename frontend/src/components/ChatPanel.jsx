@@ -436,85 +436,90 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
         </div>
       )}
 
-      {/* Input */}
-      <form onSubmit={send} className="px-3 py-3 border-t flex items-end gap-1.5 relative"
+      {/* Input — estilo WhatsApp: pill + botão grande verde */}
+      <form onSubmit={send} className="px-2 py-2 border-t flex items-end gap-2 relative"
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
-        {/* Emoji */}
-        <button type="button" data-emoji-toggle
-          onClick={() => setEmojiOpen((v) => !v)}
-          title="Emoji"
-          className="w-10 h-10 rounded-full flex items-center justify-center text-lg hover:bg-white/[0.06] transition-colors"
-          style={{ color: 'var(--inunda-text-muted)' }}>
-          😀
-        </button>
-        {emojiOpen && (
-          <div className="emoji-picker-wrap absolute bottom-16 left-2 z-30 shadow-2xl rounded-lg overflow-hidden">
-            <EmojiPicker
-              onEmojiClick={(e) => { insertEmoji(e.emoji); }}
-              theme={Theme.DARK}
-              emojiStyle={EmojiStyle.NATIVE}
-              width={320}
-              height={400}
-              skinTonesDisabled
-              previewConfig={{ showPreview: false }}
-            />
-          </div>
-        )}
-
-        {/* Anexar arquivo */}
-        <button type="button" onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          title="Anexar arquivo (imagem, vídeo, documento)"
-          className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06] transition-colors disabled:opacity-40"
-          style={{ color: 'var(--inunda-text-muted)' }}>
-          {uploading ? '⏳' : (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
-            </svg>
+        {/* Pill que envolve todos os controles do input */}
+        <div className="flex-1 flex items-end gap-1 rounded-full px-1.5 py-1"
+          style={{ background: 'var(--inunda-bg-elevated)', minHeight: 48 }}>
+          {/* Emoji */}
+          <button type="button" data-emoji-toggle
+            onClick={() => setEmojiOpen((v) => !v)}
+            title="Emoji"
+            className="w-9 h-9 rounded-full flex items-center justify-center text-lg flex-shrink-0 hover:bg-white/[0.08] transition-colors"
+            style={{ color: 'var(--inunda-text-muted)' }}>
+            😀
+          </button>
+          {emojiOpen && (
+            <div className="emoji-picker-wrap absolute bottom-16 left-2 z-30 shadow-2xl rounded-lg overflow-hidden">
+              <EmojiPicker
+                onEmojiClick={(e) => { insertEmoji(e.emoji); }}
+                theme={Theme.DARK}
+                emojiStyle={EmojiStyle.NATIVE}
+                width={320}
+                height={400}
+                skinTonesDisabled
+                previewConfig={{ showPreview: false }}
+              />
+            </div>
           )}
-        </button>
-        <input ref={fileInputRef} type="file" className="hidden"
-          accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f, text); e.target.value = ''; setText(''); }} />
 
-        {/* Camera (mobile) */}
-        <button type="button" onClick={() => cameraInputRef.current?.click()}
-          title="Câmera (mobile)"
-          className="md:hidden w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/[0.06] transition-colors"
-          style={{ color: 'var(--inunda-text-muted)' }}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-            <circle cx="12" cy="13" r="4"/>
-          </svg>
-        </button>
-        <input ref={cameraInputRef} type="file" className="hidden" accept="image/*" capture="environment"
-          onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f, text); e.target.value = ''; setText(''); }} />
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            value={text}
+            onChange={(e) => onTyping(e.target.value)}
+            onKeyDown={handleKey}
+            onPaste={onPaste}
+            placeholder="Mensagem"
+            className="flex-1 bg-transparent border-0 px-1 py-2 text-sm resize-none max-h-32 focus:outline-none leading-snug self-center"
+            style={{ color: 'var(--inunda-text)' }} />
 
-        <textarea
-          ref={textareaRef}
-          rows={1}
-          value={text}
-          onChange={(e) => onTyping(e.target.value)}
-          onKeyDown={handleKey}
-          onPaste={onPaste}
-          placeholder="Mensagem... (Shift+Enter linha · Ctrl+V cola imagem)"
-          className="flex-1 bg-white/5 border rounded-2xl px-4 py-2 text-sm resize-none max-h-32 focus:outline-none focus:border-cyan-400"
-          style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+          {/* Anexar arquivo */}
+          <button type="button" onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            title="Anexar arquivo"
+            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 hover:bg-white/[0.08] transition-colors disabled:opacity-40"
+            style={{ color: 'var(--inunda-text-muted)' }}>
+            {uploading ? '⏳' : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+              </svg>
+            )}
+          </button>
+          <input ref={fileInputRef} type="file" className="hidden"
+            accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f, text); e.target.value = ''; setText(''); }} />
 
+          {/* Camera */}
+          <button type="button" onClick={() => cameraInputRef.current?.click()}
+            title="Câmera"
+            className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 hover:bg-white/[0.08] transition-colors"
+            style={{ color: 'var(--inunda-text-muted)' }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </button>
+          <input ref={cameraInputRef} type="file" className="hidden" accept="image/*" capture="environment"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) sendFile(f, text); e.target.value = ''; setText(''); }} />
+        </div>
+
+        {/* Botão verde redondo: send (se tem texto) OU mic (se vazio) */}
         {text.trim() ? (
           <button type="submit" disabled={sending}
-            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-40"
-            style={{ background: 'var(--inunda-cyan)', color: 'var(--inunda-bg-deep)' }}>
+            className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 disabled:opacity-40 shadow-md transition-transform active:scale-95"
+            style={{ background: '#22c55e', color: '#fff' }}>
             {sending ? '…' : (
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2v7z"/></svg>
             )}
           </button>
         ) : (
           <button type="button" onClick={startRecording}
             title="Gravar áudio"
-            className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 transition-colors hover:bg-red-500/15"
-            style={{ color: '#ef4444' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            className="w-12 h-12 rounded-full flex items-center justify-center flex-shrink-0 shadow-md transition-transform active:scale-95"
+            style={{ background: '#22c55e', color: '#fff' }}>
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/>
             </svg>

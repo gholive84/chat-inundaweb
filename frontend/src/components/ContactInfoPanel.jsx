@@ -115,8 +115,18 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
     if (!schedForm?.body?.trim() || !schedForm?.scheduled_for || !schedForm?.instance_id) {
       alert('Preencha mensagem, data/hora e caixa'); return;
     }
+    // datetime-local devolve "2026-05-23T09:25" sem timezone (hora LOCAL do user).
+    // Converte pra ISO UTC pra o backend ter timestamp absoluto correto.
+    const localDate = new Date(schedForm.scheduled_for);
+    if (localDate.getTime() <= Date.now()) {
+      alert('Escolha um horário futuro'); return;
+    }
+    const payload = {
+      ...schedForm,
+      scheduled_for: localDate.toISOString(),
+    };
     try {
-      const { data } = await api.post(`/scheduled/contact/${conv.contact_id}`, schedForm);
+      const { data } = await api.post(`/scheduled/contact/${conv.contact_id}`, payload);
       setScheduled((p) => [data, ...p]);
       setSchedForm(null);
     } catch (e) { alert(e.response?.data?.error || 'Erro'); }
@@ -132,8 +142,12 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
   const displayName = c.name || c.push_name || c.phone;
 
   return (
-    <aside className="w-80 flex-shrink-0 flex flex-col overflow-y-auto border-l"
-      style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
+    <>
+      {/* Backdrop só no mobile */}
+      <div onClick={onClose}
+        className="md:hidden fixed inset-0 bg-black/60 z-40" />
+      <aside className="fixed md:static inset-y-0 right-0 z-50 w-full sm:w-96 md:w-80 flex-shrink-0 flex flex-col overflow-y-auto border-l"
+        style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
 
       <div className="flex items-center justify-between px-4 py-3 border-b sticky top-0 z-10"
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>
@@ -356,6 +370,7 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
           </div>
         )}
       </Section>
-    </aside>
+      </aside>
+    </>
   );
 }

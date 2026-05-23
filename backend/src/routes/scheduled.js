@@ -31,7 +31,10 @@ router.post('/contact/:contactId', authCompany, async (req, res) => {
     if (!body?.trim()) return res.status(400).json({ error: 'Mensagem obrigatória' });
     if (!scheduled_for) return res.status(400).json({ error: 'Data/hora obrigatórias' });
     if (!instance_id) return res.status(400).json({ error: 'Selecione a caixa' });
-    if (new Date(scheduled_for) < new Date()) return res.status(400).json({ error: 'Data deve ser no futuro' });
+    // 30s de margem pra cobrir clock skew + latencia de rede
+    if (new Date(scheduled_for).getTime() < Date.now() - 30000) {
+      return res.status(400).json({ error: 'Data deve ser no futuro' });
+    }
 
     // Valida ownership de contato + instancia
     const { rows: ck } = await pool.query(
