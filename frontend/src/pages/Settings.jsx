@@ -340,7 +340,7 @@ function InstanceAIPanel({ instanceId, onSaved }) {
 
   return (
     <div className="space-y-4">
-      {/* Sub-tabs config | knowledge */}
+      {/* Sub-tabs config | knowledge | templates */}
       <div className="flex gap-1 border-b" style={{ borderColor: 'var(--inunda-border)' }}>
         <button onClick={() => setTab('config')}
           className="px-3 py-1.5 text-sm border-b-2"
@@ -354,6 +354,12 @@ function InstanceAIPanel({ instanceId, onSaved }) {
             color: tab === 'knowledge' ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
             borderColor: tab === 'knowledge' ? 'var(--inunda-cyan)' : 'transparent',
           }}>📚 Conhecimento</button>
+        <button onClick={() => setTab('templates')}
+          className="px-3 py-1.5 text-sm border-b-2"
+          style={{
+            color: tab === 'templates' ? 'var(--inunda-cyan)' : 'var(--inunda-text-muted)',
+            borderColor: tab === 'templates' ? 'var(--inunda-cyan)' : 'transparent',
+          }}>⚡ Templates</button>
       </div>
 
       {tab === 'config' && (
@@ -486,6 +492,7 @@ function InstanceAIPanel({ instanceId, onSaved }) {
       )}
 
       {tab === 'knowledge' && <KnowledgePanel instanceId={instanceId} />}
+      {tab === 'templates' && <AITemplatesPanel instanceId={instanceId} />}
     </div>
   );
 }
@@ -574,6 +581,69 @@ function KnowledgePanel({ instanceId }) {
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+// Painel: quais templates a IA dessa caixa pode usar
+function AITemplatesPanel({ instanceId }) {
+  const [list, setList] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [ok, setOk] = useState('');
+  function load() { api.get(`/ai/instances/${instanceId}/templates`).then((r) => setList(r.data)).catch(() => {}); }
+  useEffect(load, [instanceId]);
+
+  function toggle(id) {
+    setList((prev) => prev.map((t) => t.id === id ? { ...t, enabled: !t.enabled } : t));
+  }
+  async function save() {
+    setSaving(true); setOk('');
+    try {
+      const ids = list.filter((t) => t.enabled).map((t) => t.id);
+      await api.put(`/ai/instances/${instanceId}/templates`, { template_ids: ids });
+      setOk('Salvo'); setTimeout(() => setOk(''), 2000);
+    } finally { setSaving(false); }
+  }
+
+  return (
+    <div className="space-y-3 max-w-2xl">
+      <Notice type="info">
+        Marque quais templates a IA dessa caixa pode usar como resposta.
+        Quando a pergunta do cliente casar com algum, a IA responde direto com o template (incluindo arquivo se tiver).
+        Caso não case, ela responde normalmente.
+      </Notice>
+      {ok && <Notice type="success">{ok}</Notice>}
+      {list.length === 0 ? (
+        <p className="text-sm italic" style={{ color: 'var(--inunda-text-faded)' }}>
+          Nenhum template criado ainda. Vá em <strong>Settings → ⚡ Templates</strong> primeiro.
+        </p>
+      ) : (
+        <div className="space-y-1.5">
+          {list.map((t) => (
+            <label key={t.id} className="flex items-start gap-2 px-3 py-2 rounded-lg border cursor-pointer hover:bg-white/[0.03]"
+              style={{ background: 'var(--inunda-bg-surface)', borderColor: t.enabled ? 'var(--inunda-cyan)' : 'var(--inunda-border)' }}>
+              <input type="checkbox" checked={!!t.enabled} onChange={() => toggle(t.id)} className="mt-1 w-4 h-4 accent-cyan-400" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <code className="text-xs font-mono-inunda font-semibold px-1.5 py-0.5 rounded"
+                    style={{ background: 'var(--inunda-cyan-faint)', color: 'var(--inunda-cyan)' }}>{t.shortcut}</code>
+                  {t.title && <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>{t.title}</span>}
+                  {t.media_filename && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded"
+                      style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--inunda-text-muted)' }}>
+                      📎 {t.media_filename}
+                    </span>
+                  )}
+                </div>
+                {t.body && <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--inunda-text-muted)' }}>{t.body}</p>}
+              </div>
+            </label>
+          ))}
+        </div>
+      )}
+      <button onClick={save} disabled={saving || list.length === 0} className={btnPrimary}>
+        {saving ? 'Salvando…' : 'Salvar seleção'}
+      </button>
     </div>
   );
 }

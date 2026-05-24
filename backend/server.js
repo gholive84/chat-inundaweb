@@ -467,6 +467,15 @@ async function runMigrations() {
   `);
   await safe(`CREATE INDEX IF NOT EXISTS idx_qr_company ON quick_replies(company_id)`);
 
+  // ── Templates que a IA de cada caixa pode usar ───────────────────────
+  await safe(`
+    CREATE TABLE IF NOT EXISTS ai_instance_templates (
+      instance_id  INTEGER NOT NULL REFERENCES whatsapp_instances(id) ON DELETE CASCADE,
+      template_id  INTEGER NOT NULL REFERENCES quick_replies(id) ON DELETE CASCADE,
+      PRIMARY KEY (instance_id, template_id)
+    )
+  `);
+
   // ── AI Knowledge base (arquivos e URLs) ──────────────────────────────
   await safe(`
     CREATE TABLE IF NOT EXISTS ai_knowledge (

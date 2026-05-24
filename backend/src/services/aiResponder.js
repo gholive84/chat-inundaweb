@@ -113,9 +113,16 @@ async function maybeRespond({ conversationId, app }) {
       return { skipped: `rate limit (${rl.waitMs}ms wait)` };
     }
 
-    // 1.5) Carrega knowledge base DA CAIXA + adiciona diretrizes WhatsApp ao system prompt
+    // 1.5) Carrega knowledge base DA CAIXA + templates permitidos + diretrizes
     const { rows: kb } = await pool.query(
       `SELECT title, content FROM ai_knowledge WHERE instance_id=$1 ORDER BY created_at ASC LIMIT 20`,
+      [C.instance_id]
+    );
+    const { rows: aiTemplates } = await pool.query(
+      `SELECT qr.id, qr.shortcut, qr.title, qr.body, qr.media_url, qr.media_mime, qr.media_filename, qr.media_type
+       FROM ai_instance_templates ait
+       JOIN quick_replies qr ON qr.id = ait.template_id
+       WHERE ait.instance_id = $1`,
       [C.instance_id]
     );
     let systemPrompt = C.system_prompt || 'Voce e um atendente automatico. Seja cordial e breve.';
@@ -123,6 +130,16 @@ async function maybeRespond({ conversationId, app }) {
     if (kb.length > 0) {
       const kbText = kb.map((k) => `### ${k.title}\n${k.content}`).join('\n\n---\n\n');
       systemPrompt += `\n\n# Base de conhecimento (use como referencia ao responder):\n\n${kbText}`;
+    }
+    if (aiTemplates.length > 0) {
+      const list = aiTemplates.map((t) => {
+        const summary = t.title || (t.body ? t.body.slice(0, 80) : '') + (t.media_filename ? ` [arquivo: ${t.media_filename}]` : '');
+        return `- ${t.shortcut} → ${summary}`;
+      }).join('\n');
+      systemPrompt += `\n\n# Templates pré-prontos disponíveis\n` +
+        `Quando a resposta ideal for um dos templates abaixo, responda EXATAMENTE com o atalho ` +
+        `(ex: \`/preco\`) — nada antes ou depois. O sistema substitui pelo conteúdo completo (incluindo arquivos).\n` +
+        `Use o template SÓ quando casar perfeitamente com a pergunta do cliente. Se nao casar, responda normal.\n\n${list}`;
     }
 
     // 2) Carrega historico das ultimas N msgs (ordenado crescente)
@@ -150,6 +167,62 @@ async function maybeRespond({ conversationId, app }) {
     });
 
     if (!reply || !reply.trim()) return { skipped: 'empty response' };
+
+    // 3.5) Parser de template: se reply for SO um /atalho, usa o template
+    const trimmedReply = reply.trim();
+    const matchedTpl = aiTemplates.find((t) =>
+      trimmedReply.toLowerCase() === t.shortcut.toLowerCase()
+    );
+    if (matchedTpl) {
+      console.log('[AI] usando template', matchedTpl.shortcut);
+      // Re-checa rate limit
+      const rlChunk = rateLimiter.check(C.instance_name, maxPerMin);
+      if (!rlChunk.allowed) await sleep(rlChunk.waitMs + 500);
+      // typing indicator
+      const typingMs = Math.floor(jitter(typingDelayFor((matchedTpl.body || '').length || 100)));
+      try { await evolution.sendPresence(C.instance_name, C.phone, 'composing', typingMs); } catch {}
+      await sleep(typingMs);
+
+      // Salva pending
+      const msgType = matchedTpl.media_type || 'text';
+      const { rows: ins } = await pool.query(`
+        INSERT INTO messages (conversation_id, from_me, author_type, type, body, media_url, media_mime, media_filename, status)
+        VALUES ($1, TRUE, 'ai', $2, $3, $4, $5, $6, 'pending') RETURNING id
+      `, [conversationId, msgType, matchedTpl.body || '', matchedTpl.media_url, matchedTpl.media_mime, matchedTpl.media_filename]);
+      const msgId = ins[0].id;
+
+      try {
+        let sent;
+        if (matchedTpl.media_url) {
+          sent = await evolution.sendMedia(C.instance_name, C.phone, {
+            kind: matchedTpl.media_type || 'document',
+            base64: matchedTpl.media_url,
+            mimetype: matchedTpl.media_mime || 'application/octet-stream',
+            fileName: matchedTpl.media_filename || 'arquivo',
+            caption: matchedTpl.body || '',
+          });
+        } else {
+          sent = await evolution.sendText(C.instance_name, C.phone, matchedTpl.body || '');
+        }
+        rateLimiter.record(C.instance_name);
+        await pool.query('UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',
+          ['sent', sent?.id || null, msgId]);
+      } catch (e) {
+        await pool.query('UPDATE messages SET status=$1, error=$2 WHERE id=$3',
+          ['failed', e.message?.slice(0, 500), msgId]);
+        return { error: 'send template failed' };
+      }
+      const preview = (matchedTpl.body || `[${msgType}]`).slice(0, 200);
+      await pool.query(
+        `UPDATE conversations SET last_message_at=NOW(), last_message_preview=$1 WHERE id=$2`,
+        [preview, conversationId]
+      );
+      const ioRef = app?.get('io');
+      ioRef?.to(`conv:${conversationId}`).emit('message:new', { conversationId });
+      ioRef?.to(`company:${C.company_id}`).emit('conversation:update', { conversationId });
+      try { await evolution.sendPresence(C.instance_name, C.phone, 'paused'); } catch {}
+      return { ok: true, template: matchedTpl.shortcut };
+    }
 
     // 4) Quebra em chunks (boas praticas WhatsApp — max ~4000 chars/msg)
     const chunks = splitMessage(reply);

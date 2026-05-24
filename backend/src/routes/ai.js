@@ -169,4 +169,47 @@ router.put('/instances/:id', authCompany, authRole('owner'), async (req, res) =>
   }
 });
 
+// Templates que a IA daquela caixa pode usar
+router.get('/instances/:id/templates', authCompany, async (req, res) => {
+  const inst = await assertInstance(req, res);
+  if (!inst) return;
+  const { rows } = await pool.query(
+    `SELECT qr.id, qr.shortcut, qr.title, qr.body, qr.media_filename, qr.media_type,
+            (ait.template_id IS NOT NULL) AS enabled
+     FROM quick_replies qr
+     LEFT JOIN ai_instance_templates ait
+       ON ait.template_id = qr.id AND ait.instance_id = $1
+     WHERE qr.company_id = $2
+     ORDER BY qr.shortcut`,
+    [inst.id, req.user.companyId]
+  );
+  res.json(rows);
+});
+
+router.put('/instances/:id/templates', authCompany, authRole('owner'), async (req, res) => {
+  try {
+    const inst = await assertInstance(req, res);
+    if (!inst) return;
+    const ids = Array.isArray(req.body?.template_ids) ? req.body.template_ids.map((x) => parseInt(x)).filter(Boolean) : [];
+    await pool.query('DELETE FROM ai_instance_templates WHERE instance_id=$1', [inst.id]);
+    if (ids.length) {
+      // Valida que templates pertencem a company
+      const { rows: valid } = await pool.query(
+        `SELECT id FROM quick_replies WHERE company_id=$1 AND id = ANY($2::int[])`,
+        [req.user.companyId, ids]
+      );
+      for (const v of valid) {
+        await pool.query(
+          'INSERT INTO ai_instance_templates (instance_id, template_id) VALUES ($1,$2) ON CONFLICT DO NOTHING',
+          [inst.id, v.id]
+        );
+      }
+    }
+    res.json({ success: true, count: ids.length });
+  } catch (err) {
+    console.error('PUT /ai/instances/:id/templates', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
 module.exports = router;

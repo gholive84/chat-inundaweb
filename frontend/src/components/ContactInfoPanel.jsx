@@ -23,7 +23,8 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
   const [agents, setAgents] = useState([]);
   const [instances, setInstances] = useState([]);
   const [scheduled, setScheduled] = useState([]);
-  const [schedForm, setSchedForm] = useState(null); // { body, scheduled_for, instance_id }
+  const [schedForm, setSchedForm] = useState(null); // { body, scheduled_for, instance_id, file, templateId }
+  const [templates, setTemplates] = useState([]);
   const [newNote, setNewNote] = useState('');
   const [newTag, setNewTag] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -43,6 +44,7 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
     api.get('/companies/agents').then((r) => setAgents(r.data)).catch(() => {});
     api.get('/instances').then((r) => setInstances(r.data)).catch(() => {});
     api.get(`/scheduled/contact/${conv.contact_id}`).then((r) => setScheduled(r.data)).catch(() => {});
+    api.get('/templates').then((r) => setTemplates(r.data)).catch(() => {});
     api.get(`/tags/conversation/${conv.id}`)
       .then((r) => setConvTagIds(new Set((r.data || []).map((t) => t.id))))
       .catch(() => setConvTagIds(new Set()));
@@ -109,6 +111,26 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
       await api.post(`/conversations/${conv.id}/assign`, { user_id: userId || null });
       onConvUpdate?.({ assigned_to_user_id: userId || null });
     } catch {}
+  }
+
+  async function applyScheduledTemplate(templateId) {
+    if (!templateId) { setSchedForm({ ...schedForm, templateId: '' }); return; }
+    const tpl = templates.find((t) => String(t.id) === String(templateId));
+    if (!tpl) return;
+    let nextFile = schedForm.file;
+    if (tpl.media_url) {
+      try {
+        const res = await fetch(tpl.media_url);
+        const blob = await res.blob();
+        nextFile = new File([blob], tpl.media_filename || 'arquivo', { type: tpl.media_mime || blob.type });
+      } catch (e) { console.warn('falha ao baixar mídia do template', e); }
+    }
+    setSchedForm({
+      ...schedForm,
+      body: tpl.body || schedForm.body || '',
+      file: nextFile,
+      templateId,
+    });
   }
 
   async function createScheduled() {
@@ -283,6 +305,18 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
                 <option key={i.id} value={i.id}>📦 {i.display_name || i.instance_name}</option>
               ))}
             </select>
+            {templates.length > 0 && (
+              <select value={schedForm.templateId || ''} onChange={(e) => applyScheduledTemplate(e.target.value)}
+                className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
+                style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }}>
+                <option value="">⚡ Usar template (opcional)</option>
+                {templates.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.shortcut} {t.title ? `— ${t.title}` : ''}{t.media_filename ? ' 📎' : ''}
+                  </option>
+                ))}
+              </select>
+            )}
             <input type="datetime-local" value={schedForm.scheduled_for}
               onChange={(e) => setSchedForm({ ...schedForm, scheduled_for: e.target.value })}
               className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"

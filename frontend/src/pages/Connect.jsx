@@ -55,6 +55,12 @@ export default function Connect() {
     await api.post(`/instances/${id}/disconnect`).catch(() => {});
     load();
   }
+  async function refreshWebhook(id) {
+    try {
+      await api.post(`/instances/${id}/refresh-webhook`);
+      alert('Webhook atualizado — caixa agora recebe status/edição/exclusão e demais eventos novos.');
+    } catch (e) { alert(e.response?.data?.error || 'Falha ao atualizar webhook'); }
+  }
   async function remove(id) {
     if (!confirm('Remover essa caixa? Conversas vão ficar órfãs (sem instância).')) return;
     await api.delete(`/instances/${id}`).catch(() => {});
@@ -201,12 +207,20 @@ export default function Connect() {
                 </div>
               )}
 
-              <div className="flex gap-2 mt-3">
+              <div className="flex gap-2 mt-3 flex-wrap">
                 {inst.status === 'connected' && isOwner && (
-                  <button onClick={() => disconnect(inst.id)}
-                    className="text-xs px-3 py-1.5 rounded-md hover:bg-white/[0.06]" style={{ color: '#fbbf24' }}>
-                    Desconectar
-                  </button>
+                  <>
+                    <button onClick={() => refreshWebhook(inst.id)}
+                      title="Re-registra os eventos do webhook no Evolution (status, edição, reações etc)"
+                      className="text-xs px-3 py-1.5 rounded-md hover:bg-white/[0.06]"
+                      style={{ color: 'var(--inunda-cyan)' }}>
+                      🔄 Atualizar webhook
+                    </button>
+                    <button onClick={() => disconnect(inst.id)}
+                      className="text-xs px-3 py-1.5 rounded-md hover:bg-white/[0.06]" style={{ color: '#fbbf24' }}>
+                      Desconectar
+                    </button>
+                  </>
                 )}
                 {isOwner && (
                   <button onClick={() => remove(inst.id)}

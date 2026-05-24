@@ -47,6 +47,24 @@ async function createInstance({ instanceName, webhookToken }) {
   };
 }
 
+// Reconfigura webhook da instancia (pra caixas antigas que nao tem novos eventos)
+async function updateWebhook(instanceName, webhookToken) {
+  const webhookUrl = PUBLIC_WEBHOOK
+    ? PUBLIC_WEBHOOK.replace(/\/$/, '') + `/${instanceName}/${webhookToken}`
+    : null;
+  if (!webhookUrl) throw new Error('PUBLIC_WEBHOOK_URL não configurado no backend');
+  await http.post(`/webhook/set/${instanceName}`, {
+    webhook: {
+      enabled: true,
+      url: webhookUrl,
+      events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'MESSAGES_DELETE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+      byEvents: false,
+      base64: true,
+    },
+  });
+  return { ok: true, url: webhookUrl };
+}
+
 async function getStatus(instanceName) {
   try {
     const [{ data: connRes }, qrRes] = await Promise.all([
@@ -199,4 +217,5 @@ module.exports = {
   sendReaction,
   editMessage,
   deleteMessageForEveryone,
+  updateWebhook,
 };

@@ -166,6 +166,22 @@ router.get('/:id/qr', authCompany, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
 });
 
+// Reconfigura o webhook no Evolution (caixas antigas que nao tem MESSAGES_UPDATE/DELETE)
+router.post('/:id/refresh-webhook', authCompany, authRole('owner'), async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      'SELECT instance_name, webhook_token FROM whatsapp_instances WHERE id=$1 AND company_id=$2',
+      [req.params.id, req.user.companyId]
+    );
+    if (!rows.length) return res.status(404).json({ error: 'Caixa não encontrada' });
+    await evolution.updateWebhook(rows[0].instance_name, rows[0].webhook_token);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('POST /instances/:id/refresh-webhook', err);
+    res.status(500).json({ error: err.message || 'Erro interno' });
+  }
+});
+
 router.post('/:id/disconnect', authCompany, authRole('owner'), async (req, res) => {
   try {
     const { rows } = await pool.query(
