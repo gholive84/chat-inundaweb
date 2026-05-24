@@ -78,6 +78,38 @@ body {
   opacity: 0.7;
 }
 
+/* ── Ajustes para tema light ───────────────────────────────────────
+   No light, varios componentes usam bg-white/[0.04] que fica invisivel.
+   Forçamos um overlay sutil escuro pra manter a hierarquia visual. */
+.theme-inunda[data-mode="light"] {
+  color-scheme: light;
+}
+.theme-inunda[data-mode="light"] select { color-scheme: light; }
+.theme-inunda[data-mode="light"] input[type="date"],
+.theme-inunda[data-mode="light"] input[type="time"],
+.theme-inunda[data-mode="light"] input[type="datetime-local"] {
+  color-scheme: light;
+}
+/* Bolhas de incoming, hover states e backgrounds white/[0.x] precisam virar dark/[0.x] no light */
+.theme-inunda[data-mode="light"] .bg-white\/\[0\.06\] { background-color: rgba(10,22,40,0.05) !important; }
+.theme-inunda[data-mode="light"] .bg-white\/\[0\.04\] { background-color: rgba(10,22,40,0.04) !important; }
+.theme-inunda[data-mode="light"] .bg-white\/\[0\.08\] { background-color: rgba(10,22,40,0.06) !important; }
+.theme-inunda[data-mode="light"] .bg-white\/5         { background-color: rgba(10,22,40,0.04) !important; }
+.theme-inunda[data-mode="light"] .hover\:bg-white\/\[0\.04\]:hover { background-color: rgba(10,22,40,0.05) !important; }
+.theme-inunda[data-mode="light"] .hover\:bg-white\/\[0\.06\]:hover { background-color: rgba(10,22,40,0.06) !important; }
+.theme-inunda[data-mode="light"] .hover\:bg-white\/\[0\.08\]:hover { background-color: rgba(10,22,40,0.08) !important; }
+/* Borders que usam white/10 no dark */
+.theme-inunda[data-mode="light"] .border-white\/10 { border-color: rgba(10,22,40,0.1) !important; }
+/* Textos white/40 e white/50 sao quase invisiveis no light — viram dark mute */
+.theme-inunda[data-mode="light"] .text-white\/40  { color: var(--inunda-text-faded) !important; }
+.theme-inunda[data-mode="light"] .text-white\/50  { color: var(--inunda-text-faded) !important; }
+.theme-inunda[data-mode="light"] .text-white\/60  { color: var(--inunda-text-muted) !important; }
+.theme-inunda[data-mode="light"] .text-white\/70  { color: var(--inunda-text-muted) !important; }
+/* Bolhas de mensagens próprias (bg-emerald-600) continuam coloridas, mas as do contato
+   (bg-white/[0.06] text-white border-white/10) ja foram cobertas acima. Texto branco
+   nas bolhas próprias coloridas continua certo no light tambem (verde/roxo escuro). */
+.theme-inunda[data-mode="light"] .text-white { /* mantem branco onde for fundo colorido. nao mexer */ }
+
 /* Cursor pra drag-and-drop kanban */
 [data-rfd-draggable-id] { cursor: grab; }
 [data-rfd-draggable-id]:active { cursor: grabbing; }
