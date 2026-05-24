@@ -56,6 +56,17 @@ body {
   color: var(--inunda-cyan);
 }
 
+/* Bolha de mensagem do contato (incoming) — adapta cor por tema */
+.bubble-incoming {
+  background-color: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.theme-inunda[data-mode="light"] .bubble-incoming {
+  background-color: #ffffff;
+  border: 1px solid rgba(10, 22, 40, 0.1);
+  box-shadow: 0 1px 2px rgba(10, 22, 40, 0.04);
+}
+
 /* Selects e options no tema dark — força background e cor pra não ficar branco no branco */
 .theme-inunda[data-mode="dark"] select {
   background-color: var(--inunda-bg-elevated) !important;

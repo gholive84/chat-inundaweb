@@ -144,15 +144,19 @@ function Bubble({ m, isActive, searchTerm, onReply, onReact, onEdit, onDelete, o
   const ageMs = Date.now() - new Date(m.created_at).getTime();
   const canEdit = fromMe && !isDeleted && m.type === 'text' && ageMs < 15 * 60 * 1000;
 
+  // Cores das bolhas — texto fica white quando o bg é colorido escuro (emerald/purple).
+  // Pra bolha do contato (cinza claro no light, cinza escuro no dark) usamos var(--inunda-text)
+  // que se adapta sozinho ao tema. Resolve o bug do "branco no branco" no tema light.
+  const bubbleBg = fromMe
+    ? (isAI ? 'bg-purple-600/90' : 'bg-emerald-600')
+    : 'bubble-incoming';
+  const textColor = fromMe ? '#ffffff' : 'var(--inunda-text)';
   return (
     <div id={`msg-${m.id}`}
       className={`group flex ${fromMe ? 'justify-end' : 'justify-start'} ${isActive ? 'ring-2 ring-yellow-400/60 rounded-lg -mx-1 px-1' : ''}`}>
       <div className="relative max-w-[70%]" data-msg-menu>
-        <div className={`px-3 py-2 rounded-lg shadow-sm text-sm ${
-          fromMe
-            ? (isAI ? 'bg-purple-600/90 text-white' : 'bg-emerald-600 text-white')
-            : 'bg-white/[0.06] text-white border border-white/10'
-        } ${isDeleted ? 'italic opacity-60' : ''}`} style={{ wordBreak: 'break-word' }}>
+        <div className={`px-3 py-2 rounded-lg shadow-sm text-sm ${bubbleBg} ${isDeleted ? 'italic opacity-60' : ''}`}
+          style={{ wordBreak: 'break-word', color: textColor }}>
           {fromMe && isAI && (
             <p className="text-[10px] uppercase tracking-wider opacity-80 font-semibold mb-0.5">🤖 IA</p>
           )}
@@ -168,12 +172,12 @@ function Bubble({ m, isActive, searchTerm, onReply, onReact, onEdit, onDelete, o
           )}
           <div className="flex items-center justify-end gap-1 mt-1 -mb-0.5">
             {m.edited_at && !isDeleted && <span className="text-[9px] opacity-70 italic">editada</span>}
-            <span className={`text-[10px] ${fromMe ? 'text-white/70' : 'text-white/40'}`}>{formatTime(m.created_at)}</span>
-            {fromMe && !isDeleted && m.status === 'sent' && <span className="text-[10px] text-white/70">✓</span>}
-            {fromMe && !isDeleted && m.status === 'delivered' && <span className="text-[10px] text-white/70">✓✓</span>}
+            <span className="text-[10px]" style={{ opacity: 0.7 }}>{formatTime(m.created_at)}</span>
+            {fromMe && !isDeleted && m.status === 'sent' && <span className="text-[10px]" style={{ opacity: 0.7 }}>✓</span>}
+            {fromMe && !isDeleted && m.status === 'delivered' && <span className="text-[10px]" style={{ opacity: 0.7 }}>✓✓</span>}
             {fromMe && !isDeleted && m.status === 'read' && <span className="text-[10px]" style={{ color: '#7dd3fc' }}>✓✓</span>}
             {fromMe && m.status === 'failed' && <span className="text-[10px] text-red-300" title={m.error || 'falha'}>⚠</span>}
-            {fromMe && m.status === 'pending' && <span className="text-[10px] text-white/40">⏳</span>}
+            {fromMe && m.status === 'pending' && <span className="text-[10px]" style={{ opacity: 0.5 }}>⏳</span>}
           </div>
         </div>
         <ReactionsRow reactions={m.reactions} onReact={onReact ? (e) => onReact(m.id, e) : null} />
