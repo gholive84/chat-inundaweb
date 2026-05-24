@@ -16,8 +16,42 @@ router.get('/me', authCompany, async (req, res) => {
       'SELECT id, name, email, role, avatar_url, active, last_seen_at FROM users WHERE company_id=$1 ORDER BY name',
       [req.user.companyId]
     );
-    res.json({ company: rows[0], users });
+    // Pega caixa favorita do user nessa empresa
+    const { rows: pref } = await pool.query(
+      'SELECT default_instance_id FROM user_memberships WHERE user_id=$1 AND company_id=$2',
+      [req.user.id, req.user.companyId]
+    );
+    res.json({
+      company: rows[0],
+      users,
+      prefs: { default_instance_id: pref[0]?.default_instance_id || null },
+    });
   } catch (err) {
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
+// Define/limpa caixa favorita pro user na empresa atual
+router.put('/me/default-instance', authCompany, async (req, res) => {
+  try {
+    const { instance_id } = req.body;
+    if (instance_id) {
+      const { rows: ck } = await pool.query(
+        'SELECT 1 FROM whatsapp_instances WHERE id=$1 AND company_id=$2',
+        [instance_id, req.user.companyId]
+      );
+      if (!ck.length) return res.status(404).json({ error: 'Caixa não encontrada' });
+    }
+    // Upsert membership (caso user nao tenha row, cria com role atual)
+    await pool.query(
+      `INSERT INTO user_memberships (user_id, company_id, role, default_instance_id)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id, company_id) DO UPDATE SET default_instance_id = EXCLUDED.default_instance_id`,
+      [req.user.id, req.user.companyId, req.user.role || 'agent', instance_id || null]
+    );
+    res.json({ success: true, default_instance_id: instance_id || null });
+  } catch (err) {
+    console.error('PUT /companies/me/default-instance', err);
     res.status(500).json({ error: 'Erro interno' });
   }
 });

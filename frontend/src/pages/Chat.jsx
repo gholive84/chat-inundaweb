@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import useSocketStore from '../store/socketStore';
@@ -90,6 +90,20 @@ export default function Chat() {
   const activeId = parseInt(id);
 
   useEffect(() => { api.get('/instances').then((r) => setInstances(r.data)).catch(() => {}); }, []);
+
+  // Aplica caixa favorita do user como filtro inicial (so na 1a carga)
+  const appliedDefaultRef = useRef(false);
+  useEffect(() => {
+    if (appliedDefaultRef.current) return;
+    api.get('/companies/me').then((r) => {
+      const def = r.data?.prefs?.default_instance_id;
+      if (def && !filter.instance_id) {
+        setFilter({ view: 'all', instance_id: def, tag_id: null });
+      }
+      appliedDefaultRef.current = true;
+    }).catch(() => { appliedDefaultRef.current = true; });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function load() {
     const params = new URLSearchParams();

@@ -6,9 +6,21 @@ const { authCompany, authRole } = require('../middleware/auth');
 // authRole nao tava importado em todos os endpoints? checando — sim, ja importado.
 const evolution = require('../providers/evolution');
 
-// Lista instancias da company com lista de agentes atribuidos
+// Lista instancias da company com lista de agentes atribuidos.
+// Para atendentes (não-owner, não super admin): se tiver instance_agents → só vê as designadas.
 router.get('/', authCompany, async (req, res) => {
   try {
+    const params = [req.user.companyId];
+    let extraWhere = '';
+    if (req.user.role !== 'owner' && !req.user.isSuperAdmin) {
+      const { rows: assigned } = await pool.query(
+        'SELECT instance_id FROM instance_agents WHERE user_id=$1', [req.user.id]
+      );
+      if (assigned.length > 0) {
+        params.push(assigned.map((a) => a.instance_id));
+        extraWhere = ` AND i.id = ANY($${params.length}::int[])`;
+      }
+    }
     const { rows } = await pool.query(`
       SELECT i.id, i.provider, i.instance_name, i.display_name, i.phone_number, i.status, i.last_event_at, i.created_at,
         COALESCE((
@@ -17,8 +29,8 @@ router.get('/', authCompany, async (req, res) => {
           WHERE ia.instance_id = i.id
         ), '[]'::json) AS agents
       FROM whatsapp_instances i
-      WHERE i.company_id=$1 ORDER BY i.created_at DESC
-    `, [req.user.companyId]);
+      WHERE i.company_id=$1${extraWhere} ORDER BY i.created_at DESC
+    `, params);
     res.json(rows);
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
 });

@@ -107,6 +107,9 @@ async function runMigrations() {
   await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_instances INTEGER DEFAULT 1`); // teto de caixas WhatsApp por empresa
   await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS message_retention_months INTEGER DEFAULT 0`); // 0=guarda pra sempre; N=hard delete msgs > N meses
 
+  // Caixa favorita por user+company (vem pre-selecionada ao logar)
+  await safe(`ALTER TABLE user_memberships ADD COLUMN IF NOT EXISTS default_instance_id INTEGER REFERENCES whatsapp_instances(id) ON DELETE SET NULL`);
+
   // ── User memberships em multiplas companies ──────────────────────────
   // Um user pode ser owner de varias empresas. A coluna company_id em users
   // funciona como "empresa principal" (a do signup), mas o user pode ter
