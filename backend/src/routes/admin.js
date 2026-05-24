@@ -13,10 +13,13 @@ router.get('/companies', async (req, res) => {
   try {
     const { rows } = await pool.query(`
       SELECT c.id, c.slug, c.name, c.email, c.active, c.max_agents,
-             COALESCE(c.max_instances, 1) AS max_instances, c.created_at,
+             COALESCE(c.max_instances, 1) AS max_instances,
+             COALESCE(c.message_retention_months, 0) AS message_retention_months,
+             c.created_at,
         (SELECT COUNT(*) FROM users u WHERE u.company_id = c.id) AS users_count,
         (SELECT COUNT(*) FROM conversations cv WHERE cv.company_id = c.id) AS conversations_count,
-        (SELECT COUNT(*) FROM whatsapp_instances i WHERE i.company_id = c.id) AS instances_count
+        (SELECT COUNT(*) FROM whatsapp_instances i WHERE i.company_id = c.id) AS instances_count,
+        (SELECT COUNT(*) FROM messages m JOIN conversations cv ON cv.id=m.conversation_id WHERE cv.company_id = c.id) AS messages_count
       FROM companies c
       ORDER BY c.created_at DESC
     `);
@@ -26,10 +29,12 @@ router.get('/companies', async (req, res) => {
 
 router.put('/companies/:id', async (req, res) => {
   try {
-    const { name, email, active, max_agents, max_instances } = req.body;
+    const { name, email, active, max_agents, max_instances, message_retention_months } = req.body;
     await pool.query(
-      'UPDATE companies SET name=$1, email=$2, active=$3, max_agents=$4, max_instances=$5 WHERE id=$6',
-      [name, email || null, active ?? true, max_agents ?? 10, max_instances ?? 1, req.params.id]
+      `UPDATE companies SET name=$1, email=$2, active=$3, max_agents=$4, max_instances=$5,
+                            message_retention_months=$6 WHERE id=$7`,
+      [name, email || null, active ?? true, max_agents ?? 10, max_instances ?? 1,
+       parseInt(message_retention_months ?? 0), req.params.id]
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }

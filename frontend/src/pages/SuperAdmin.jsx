@@ -117,6 +117,26 @@ function CompaniesTab() {
                 </p>
               </div>
             </div>
+            <div>
+              <label className="text-[10px] uppercase font-semibold block mb-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                Retenção de mensagens (meses)
+              </label>
+              <div className="flex gap-2 items-center">
+                <input type="number" min={0} max={120} value={editing.message_retention_months ?? 0}
+                  onChange={(e) => setEditing({ ...editing, message_retention_months: parseInt(e.target.value || '0') })}
+                  className={`${inputCls} w-24`}
+                  style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+                <span className="text-[11px]" style={{ color: 'var(--inunda-text-faded)' }}>
+                  {(!editing.message_retention_months || editing.message_retention_months === 0)
+                    ? '⚠ guarda para sempre — pode crescer indefinidamente'
+                    : `apaga mensagens > ${editing.message_retention_months} mês(es)`}
+                </span>
+              </div>
+              <p className="text-[10px] mt-1" style={{ color: 'var(--inunda-text-faded)' }}>
+                Mensagens armazenadas: {(editing.messages_count ?? 0).toLocaleString('pt-BR')}.
+                {' '}Campo "raw" (debug) já é zerado em msgs maiores que 30 dias automaticamente.
+              </p>
+            </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={editing.active} onChange={(e) => setEditing({ ...editing, active: e.target.checked })} className="w-4 h-4 accent-cyan-400" />
               <span className="text-sm" style={{ color: 'var(--inunda-text)' }}>Empresa ativa</span>

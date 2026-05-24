@@ -2,6 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import useAuthStore from '../store/authStore';
 import CompanySwitcher from './CompanySwitcher';
 import UserMenu from './UserMenu';
+import InstanceAlerts from './InstanceAlerts';
 
 function NavIcon({ to, label, children }) {
   return (
@@ -83,6 +84,9 @@ export default function AppShell() {
             <UserMenu />
           </div>
         </div>
+
+        {/* Banner global de caixas desconectadas */}
+        <InstanceAlerts />
 
         <main className="flex-1 overflow-hidden min-h-0">
           <Outlet />

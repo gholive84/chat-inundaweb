@@ -33,7 +33,7 @@ router.post('/evolution/:instance/:token', async (req, res) => {
     } else if (event === 'messages.delete') {
       await handleMessageDelete(req.app, inst, req.body);
     } else if (event === 'connection.update' || event === 'qrcode.updated') {
-      await handleConnectionUpdate(inst, req.body);
+      await handleConnectionUpdate(req.app, inst, req.body);
     } else {
       console.log('[webhook] evento ignorado', event);
     }
@@ -45,13 +45,36 @@ router.post('/evolution/:instance/:token', async (req, res) => {
   }
 });
 
-async function handleConnectionUpdate(inst, payload) {
+async function handleConnectionUpdate(app, inst, payload) {
   const status = payload?.data?.state || payload?.state || payload?.status;
   const qr = payload?.data?.qrcode?.base64 || payload?.qrcode || null;
   if (status) {
     const mapped = ({ open: 'connected', connecting: 'connecting', close: 'disconnected' })[status] || status;
+    // Pega status anterior pra detectar transicao
+    const { rows: prev } = await pool.query(
+      'SELECT status, display_name, instance_name FROM whatsapp_instances WHERE id=$1', [inst.id]
+    );
+    const oldStatus = prev[0]?.status;
     await pool.query('UPDATE whatsapp_instances SET status=$1, qr_code=$2 WHERE id=$3',
       [mapped, qr, inst.id]);
+    // Se TRANSICIONOU pra disconnected (não estava ja desconectada), avisa
+    if (mapped === 'disconnected' && oldStatus && oldStatus !== 'disconnected') {
+      console.log(`[disconnect alert] caixa ${inst.id} (${prev[0]?.display_name || prev[0]?.instance_name})`);
+      const io = app?.get?.('io');
+      io?.to(`company:${inst.company_id}`).emit('instance:disconnected', {
+        instanceId: inst.id,
+        instanceName: prev[0]?.instance_name,
+        displayName: prev[0]?.display_name,
+        at: new Date().toISOString(),
+      });
+    } else if (mapped === 'connected' && oldStatus === 'disconnected') {
+      const io = app?.get?.('io');
+      io?.to(`company:${inst.company_id}`).emit('instance:reconnected', {
+        instanceId: inst.id,
+        instanceName: prev[0]?.instance_name,
+        displayName: prev[0]?.display_name,
+      });
+    }
   } else if (qr) {
     await pool.query('UPDATE whatsapp_instances SET qr_code=$1 WHERE id=$2', [qr, inst.id]);
   }

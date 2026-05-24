@@ -105,6 +105,7 @@ async function runMigrations() {
   await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS sign_messages BOOLEAN DEFAULT FALSE`);
   await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS signature_format VARCHAR(50) DEFAULT 'bold'`); // bold | brackets | plain
   await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS max_instances INTEGER DEFAULT 1`); // teto de caixas WhatsApp por empresa
+  await safe(`ALTER TABLE companies ADD COLUMN IF NOT EXISTS message_retention_months INTEGER DEFAULT 0`); // 0=guarda pra sempre; N=hard delete msgs > N meses
 
   // ── User memberships em multiplas companies ──────────────────────────
   // Um user pode ser owner de varias empresas. A coluna company_id em users
@@ -504,6 +505,7 @@ async function start() {
   });
   // Workers
   require('./src/services/scheduledSender').start(app);
+  require('./src/services/cleanupJobs').start();
 }
 
 start().catch((e) => { console.error(e); process.exit(1); });
