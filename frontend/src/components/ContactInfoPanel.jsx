@@ -112,21 +112,23 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
   }
 
   async function createScheduled() {
-    if (!schedForm?.body?.trim() || !schedForm?.scheduled_for || !schedForm?.instance_id) {
-      alert('Preencha mensagem, data/hora e caixa'); return;
+    if ((!schedForm?.body?.trim() && !schedForm?.file) || !schedForm?.scheduled_for || !schedForm?.instance_id) {
+      alert('Preencha mensagem (ou anexe arquivo), data/hora e caixa'); return;
     }
-    // datetime-local devolve "2026-05-23T09:25" sem timezone (hora LOCAL do user).
-    // Converte pra ISO UTC pra o backend ter timestamp absoluto correto.
     const localDate = new Date(schedForm.scheduled_for);
     if (localDate.getTime() <= Date.now()) {
       alert('Escolha um horário futuro'); return;
     }
-    const payload = {
-      ...schedForm,
-      scheduled_for: localDate.toISOString(),
-    };
     try {
-      const { data } = await api.post(`/scheduled/contact/${conv.contact_id}`, payload);
+      // Sempre multipart pra simplicidade (suporta arquivo opcional)
+      const form = new FormData();
+      form.append('body', schedForm.body || '');
+      form.append('scheduled_for', localDate.toISOString());
+      form.append('instance_id', schedForm.instance_id);
+      if (schedForm.file) form.append('file', schedForm.file);
+      const { data } = await api.post(`/scheduled/contact/${conv.contact_id}`, form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setScheduled((p) => [data, ...p]);
       setSchedForm(null);
     } catch (e) { alert(e.response?.data?.error || 'Erro'); }
@@ -286,11 +288,32 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
               className="w-full bg-white/5 border rounded-lg px-2 py-1 text-xs focus:outline-none focus:border-cyan-400"
               style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
             <textarea rows={3} value={schedForm.body} onChange={(e) => setSchedForm({ ...schedForm, body: e.target.value })}
-              placeholder="Mensagem que será enviada..."
+              placeholder={schedForm.file ? 'Legenda (opcional)' : 'Mensagem que será enviada...'}
               className="w-full bg-white/5 border rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:border-cyan-400 resize-none"
               style={{ color: 'var(--inunda-text)', borderColor: 'var(--inunda-border)' }} />
+            {/* Anexo opcional */}
+            <div className="flex items-center gap-2">
+              <label className="cursor-pointer text-xs flex items-center gap-1 px-2 py-1 rounded-md border"
+                style={{ color: 'var(--inunda-cyan)', borderColor: 'var(--inunda-border)' }}>
+                📎 {schedForm.file ? 'Trocar' : 'Anexar imagem/doc'}
+                <input type="file" className="hidden"
+                  accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f && f.size > 25 * 1024 * 1024) { alert('Máx 25MB'); return; }
+                    setSchedForm({ ...schedForm, file: f || null });
+                    e.target.value = '';
+                  }} />
+              </label>
+              {schedForm.file && (
+                <span className="text-[10px] truncate flex-1" style={{ color: 'var(--inunda-text-muted)' }}>
+                  {schedForm.file.name} <button onClick={() => setSchedForm({ ...schedForm, file: null })} className="text-red-400 ml-1">×</button>
+                </span>
+              )}
+            </div>
             <div className="flex gap-1.5">
-              <button onClick={createScheduled} disabled={!schedForm.body.trim() || !schedForm.scheduled_for || !schedForm.instance_id}
+              <button onClick={createScheduled}
+                disabled={(!schedForm.body.trim() && !schedForm.file) || !schedForm.scheduled_for || !schedForm.instance_id}
                 className="btn-primary text-xs px-3 py-1 rounded-md flex-1 disabled:opacity-40">Agendar</button>
               <button onClick={() => setSchedForm(null)} className="text-xs px-2" style={{ color: 'var(--inunda-text-muted)' }}>×</button>
             </div>
@@ -307,7 +330,10 @@ export default function ContactInfoPanel({ conv, onConvUpdate, onClose }) {
               <div key={s.id} className="px-2 py-1.5 rounded-md text-xs flex items-start gap-2"
                 style={{ background: 'var(--inunda-bg-elevated)', border: '1px solid var(--inunda-border)', opacity: s.status === 'cancelled' ? 0.5 : 1 }}>
                 <div className="flex-1 min-w-0">
-                  <p style={{ color: 'var(--inunda-text)' }} className="line-clamp-2">{s.body}</p>
+                  <p style={{ color: 'var(--inunda-text)' }} className="line-clamp-2">
+                    {s.media_filename && <span className="opacity-70 mr-1">📎 {s.media_filename}</span>}
+                    {s.body || (s.media_filename ? '' : '(vazio)')}
+                  </p>
                   <p className="text-[10px] mt-0.5" style={{ color: 'var(--inunda-text-faded)' }}>
                     📦 {s.instance_label || s.instance_name} · {when.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}
                   </p>

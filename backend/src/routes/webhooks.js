@@ -28,10 +28,13 @@ router.post('/evolution/:instance/:token', async (req, res) => {
     // Dispatch por tipo de evento
     if (event === 'messages.upsert' || event === 'message') {
       await handleIncomingMessage(req.app, inst, req.body);
+    } else if (event === 'messages.update') {
+      await handleMessageUpdate(req.app, inst, req.body);
+    } else if (event === 'messages.delete') {
+      await handleMessageDelete(req.app, inst, req.body);
     } else if (event === 'connection.update' || event === 'qrcode.updated') {
       await handleConnectionUpdate(inst, req.body);
     } else {
-      // log e segue
       console.log('[webhook] evento ignorado', event);
     }
 
@@ -127,6 +130,68 @@ async function handleIncomingMessage(app, inst, payload) {
   let body = m?.conversation || m?.extendedTextMessage?.text || '';
   let mediaUrl = null, mediaMime = null, mediaFilename = null;
 
+  // ── Reaction recebida ─────────────────────────────────────────────
+  // m.reactionMessage = { key: {id, fromMe, remoteJid}, text: '👍' }
+  if (m?.reactionMessage) {
+    const targetProviderId = m.reactionMessage?.key?.id;
+    const emoji = m.reactionMessage?.text || '';
+    if (targetProviderId) {
+      const { rows: tgt } = await pool.query(
+        'SELECT id FROM messages WHERE provider_msg_id=$1', [targetProviderId]
+      );
+      if (tgt.length) {
+        if (!emoji) {
+          await pool.query(
+            `DELETE FROM message_reactions WHERE message_id=$1 AND by_type='contact'`,
+            [tgt[0].id]
+          );
+        } else {
+          await pool.query(
+            `INSERT INTO message_reactions (message_id, emoji, by_type) VALUES ($1,$2,'contact')
+             ON CONFLICT (message_id, by_type, by_user_id) DO UPDATE SET emoji=EXCLUDED.emoji, created_at=NOW()`,
+            [tgt[0].id, emoji]
+          );
+        }
+        const io = app.get('io');
+        io?.to(`conv:${convId}`).emit('message:reaction', { messageId: tgt[0].id });
+      }
+    }
+    return; // reaction nao gera nova msg
+  }
+
+  // ── Mensagem editada pelo contato ──────────────────────────────────
+  // editedMessage / protocolMessage.editedMessage
+  const editedInner = m?.editedMessage?.message || m?.protocolMessage?.editedMessage;
+  const editedKey = m?.editedMessage?.key || m?.protocolMessage?.key;
+  if (editedInner && editedKey?.id) {
+    const newText = editedInner?.conversation || editedInner?.extendedTextMessage?.text || '';
+    const { rows: tgt } = await pool.query(
+      'SELECT id, conversation_id FROM messages WHERE provider_msg_id=$1', [editedKey.id]
+    );
+    if (tgt.length && newText) {
+      await pool.query('UPDATE messages SET body=$1, edited_at=NOW() WHERE id=$2', [newText, tgt[0].id]);
+      const io = app.get('io');
+      io?.to(`conv:${tgt[0].conversation_id}`).emit('message:edited', { messageId: tgt[0].id });
+    }
+    return;
+  }
+
+  // ── Mensagem revogada (protocolMessage type=REVOKE) ────────────────
+  if (m?.protocolMessage?.type === 0 || m?.protocolMessage?.type === 'REVOKE') {
+    const revokeKey = m.protocolMessage?.key;
+    if (revokeKey?.id) {
+      const { rows: tgt } = await pool.query(
+        'SELECT id, conversation_id FROM messages WHERE provider_msg_id=$1', [revokeKey.id]
+      );
+      if (tgt.length) {
+        await pool.query(`UPDATE messages SET deleted_at=NOW(), body='[mensagem apagada]' WHERE id=$1`, [tgt[0].id]);
+        const io = app.get('io');
+        io?.to(`conv:${tgt[0].conversation_id}`).emit('message:deleted', { messageId: tgt[0].id });
+      }
+    }
+    return;
+  }
+
   if (m?.imageMessage)    { type = 'image';    body = m.imageMessage.caption || ''; mediaMime = m.imageMessage.mimetype; }
   else if (m?.audioMessage){ type = 'audio'; mediaMime = m.audioMessage.mimetype; }
   else if (m?.videoMessage){ type = 'video'; body = m.videoMessage.caption || ''; mediaMime = m.videoMessage.mimetype; }
@@ -134,18 +199,53 @@ async function handleIncomingMessage(app, inst, payload) {
   else if (m?.stickerMessage){ type = 'sticker'; mediaMime = m.stickerMessage?.mimetype || 'image/webp'; }
   const isMedia = ['image', 'audio', 'video', 'document', 'sticker'].includes(type);
 
+  // ── Quoted message (reply) ─────────────────────────────────────────
+  // Vem em contextInfo.quotedMessage + contextInfo.stanzaId (id da msg citada)
+  const ctx = m?.extendedTextMessage?.contextInfo
+           || m?.imageMessage?.contextInfo
+           || m?.videoMessage?.contextInfo
+           || m?.documentMessage?.contextInfo
+           || m?.audioMessage?.contextInfo;
+  let quotedSnap = {};
+  if (ctx?.quotedMessage && ctx?.stanzaId) {
+    const qm = ctx.quotedMessage;
+    let qText = qm.conversation || qm.extendedTextMessage?.text
+             || qm.imageMessage?.caption || qm.videoMessage?.caption || '';
+    let qType = 'text';
+    if (qm.imageMessage) qType = 'image';
+    else if (qm.audioMessage) qType = 'audio';
+    else if (qm.videoMessage) qType = 'video';
+    else if (qm.documentMessage) qType = 'document';
+    if (!qText && qType !== 'text') qText = `[${qType}]`;
+    const { rows: qRow } = await pool.query(
+      'SELECT id, from_me FROM messages WHERE provider_msg_id=$1', [ctx.stanzaId]
+    );
+    quotedSnap = {
+      quoted_msg_id: qRow[0]?.id || null,
+      quoted_body: qText.slice(0, 500),
+      quoted_from_me: qRow[0]?.from_me ?? !!ctx.participant,
+      quoted_type: qType,
+      quoted_provider_msg_id: ctx.stanzaId,
+    };
+  }
+
   // Insere mensagem (dedup pelo provider_msg_id)
   const providerMsgId = key.id || data.id || null;
   let insertedRow = null;
   try {
     const { rows } = await pool.query(`
       INSERT INTO messages
-        (conversation_id, provider_msg_id, from_me, author_type, type, body, media_url, media_mime, media_filename, raw)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        (conversation_id, provider_msg_id, from_me, author_type, type, body,
+         media_url, media_mime, media_filename, raw,
+         quoted_msg_id, quoted_body, quoted_from_me, quoted_type, quoted_provider_msg_id)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       ON CONFLICT (provider_msg_id) DO NOTHING
       RETURNING *
     `, [convId, providerMsgId, fromMe, fromMe ? 'agent' : 'contact',
-        type, body, mediaUrl, mediaMime, mediaFilename, payload]);
+        type, body, mediaUrl, mediaMime, mediaFilename, payload,
+        quotedSnap.quoted_msg_id || null, quotedSnap.quoted_body || null,
+        quotedSnap.quoted_from_me ?? null, quotedSnap.quoted_type || null,
+        quotedSnap.quoted_provider_msg_id || null]);
     insertedRow = rows[0];
   } catch (e) { console.error('insert message', e.message); }
 
@@ -220,6 +320,64 @@ async function handleIncomingMessage(app, inst, payload) {
           .catch((e) => console.error('[AI] error:', e.message));
       });
     }
+  }
+}
+
+// ── Update de status (delivered / read) ──────────────────────────────
+// Evolution emite messages.update com { key, status: 'DELIVERY_ACK' | 'READ' | ... }
+async function handleMessageUpdate(app, inst, payload) {
+  const updates = Array.isArray(payload?.data) ? payload.data : [payload?.data].filter(Boolean);
+  for (const u of updates) {
+    try {
+      const msgId = u?.key?.id || u?.keyId || u?.messageId;
+      const status = (u?.status || u?.update?.status || '').toString().toUpperCase();
+      if (!msgId || !status) continue;
+      // Mapeia status WhatsApp → nosso
+      let dbStatus = null;
+      let setField = null;
+      if (status === 'DELIVERY_ACK' || status === 'SERVER_ACK' || status === 'DELIVERED') {
+        dbStatus = 'delivered'; setField = 'delivered_at';
+      } else if (status === 'READ' || status === 'PLAYED') {
+        dbStatus = 'read'; setField = 'read_at';
+      }
+      if (!dbStatus) continue;
+      // Atualiza só se for upgrade de status (não regredir de 'read' pra 'delivered')
+      const order = { pending: 0, sent: 1, delivered: 2, read: 3 };
+      const { rows } = await pool.query(
+        `UPDATE messages SET status=$1, ${setField}=COALESCE(${setField}, NOW())
+         WHERE provider_msg_id=$2 AND from_me=TRUE
+           AND COALESCE($3, 0) > COALESCE((CASE status
+             WHEN 'pending' THEN 0 WHEN 'sent' THEN 1 WHEN 'delivered' THEN 2 WHEN 'read' THEN 3
+             ELSE 1 END), 1)
+         RETURNING id, conversation_id`,
+        [dbStatus, msgId, order[dbStatus]]
+      );
+      if (rows.length) {
+        const io = app.get('io');
+        io?.to(`conv:${rows[0].conversation_id}`).emit('message:status', {
+          messageId: rows[0].id, status: dbStatus,
+        });
+      }
+    } catch (e) { console.warn('[webhook update]', e.message); }
+  }
+}
+
+async function handleMessageDelete(app, inst, payload) {
+  const list = Array.isArray(payload?.data) ? payload.data : [payload?.data].filter(Boolean);
+  for (const d of list) {
+    try {
+      const msgId = d?.key?.id || d?.keyId;
+      if (!msgId) continue;
+      const { rows } = await pool.query(
+        `UPDATE messages SET deleted_at=NOW(), body='[mensagem apagada]'
+         WHERE provider_msg_id=$1 RETURNING id, conversation_id`,
+        [msgId]
+      );
+      if (rows.length) {
+        const io = app.get('io');
+        io?.to(`conv:${rows[0].conversation_id}`).emit('message:deleted', { messageId: rows[0].id });
+      }
+    } catch (e) { console.warn('[webhook delete]', e.message); }
   }
 }
 

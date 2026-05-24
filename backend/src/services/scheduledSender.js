@@ -11,6 +11,7 @@ async function tick(app) {
   try {
     const { rows } = await pool.query(`
       SELECT s.id, s.body, s.contact_id, s.instance_id, s.company_id,
+             s.media_url, s.media_mime, s.media_filename, s.media_type,
              ct.phone, i.instance_name, co.sign_messages, co.signature_format,
              u.name AS author_name
       FROM scheduled_messages s
@@ -23,15 +24,26 @@ async function tick(app) {
       LIMIT 20
     `);
     for (const m of rows) {
-      let body = m.body;
-      if (m.sign_messages && m.author_name) {
+      let body = m.body || '';
+      if (m.sign_messages && m.author_name && body) {
         const fmt = m.signature_format || 'bold';
         const sig = fmt === 'brackets' ? `[${m.author_name}]` : fmt === 'plain' ? `${m.author_name}:` : `*${m.author_name}*`;
-        body = `${sig}\n${m.body}`;
+        body = `${sig}\n${body}`;
       }
       try {
-        const sent = await evolution.sendText(m.instance_name, m.phone, body);
-        // Salva a msg na conversation correta (cria conv se nao existe)
+        let sent;
+        if (m.media_url) {
+          // Tem mídia: envia como image/document/etc com caption
+          sent = await evolution.sendMedia(m.instance_name, m.phone, {
+            kind: m.media_type || 'document',
+            base64: m.media_url, // URL passa direto, Evolution suporta ambos
+            mimetype: m.media_mime || 'application/octet-stream',
+            fileName: m.media_filename || 'arquivo',
+            caption: body,
+          });
+        } else {
+          sent = await evolution.sendText(m.instance_name, m.phone, body);
+        }
         const { rows: conv } = await pool.query(
           'SELECT id FROM conversations WHERE instance_id=$1 AND contact_id=$2 LIMIT 1',
           [m.instance_id, m.contact_id]
@@ -46,14 +58,16 @@ async function tick(app) {
           );
           convId = ins[0].id;
         }
+        const msgType = m.media_type || 'text';
         await pool.query(`
-          INSERT INTO messages (conversation_id, from_me, author_type, type, body, status, provider_msg_id)
-          VALUES ($1, TRUE, 'agent', 'text', $2, 'sent', $3)
-        `, [convId, body, sent?.id || null]);
+          INSERT INTO messages (conversation_id, from_me, author_type, type, body, media_url, media_mime, media_filename, status, provider_msg_id)
+          VALUES ($1, TRUE, 'agent', $2, $3, $4, $5, $6, 'sent', $7)
+        `, [convId, msgType, body, m.media_url, m.media_mime, m.media_filename, sent?.id || null]);
+        const preview = (body || `[${msgType}]`).slice(0, 200);
         await pool.query(`
           UPDATE conversations SET last_message_at=NOW(), last_message_preview=$1, ai_paused_until=NOW() + INTERVAL '10 minutes'
           WHERE id=$2
-        `, [body.slice(0, 200), convId]);
+        `, [preview, convId]);
         await pool.query(
           'UPDATE scheduled_messages SET status=$1, sent_at=NOW() WHERE id=$2',
           ['sent', m.id]

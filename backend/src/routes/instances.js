@@ -51,9 +51,13 @@ router.post('/:id/agents', authCompany, authRole('owner'), async (req, res) => {
       [req.params.id, req.user.companyId]
     );
     if (!inst.length) return res.status(404).json({ error: 'Instância não encontrada' });
-    // valida que user pertence à company
+    // valida que user pertence à company (via primary company_id OU via membership)
     const { rows: usr } = await pool.query(
-      'SELECT id FROM users WHERE id=$1 AND company_id=$2',
+      `SELECT u.id FROM users u
+       WHERE u.id=$1 AND (
+         u.company_id=$2
+         OR EXISTS (SELECT 1 FROM user_memberships m WHERE m.user_id=u.id AND m.company_id=$2)
+       )`,
       [user_id, req.user.companyId]
     );
     if (!usr.length) return res.status(404).json({ error: 'Usuário não pertence à empresa' });

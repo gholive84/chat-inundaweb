@@ -34,7 +34,7 @@ async function createInstance({ instanceName, webhookToken }) {
     ...(webhookUrl ? {
       webhook: {
         url: webhookUrl,
-        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
+        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'MESSAGES_DELETE', 'CONNECTION_UPDATE', 'QRCODE_UPDATED'],
         byEvents: false,
         base64: true,
       }
@@ -69,13 +69,53 @@ async function deleteInstance(instanceName) {
   await http.delete(`/instance/delete/${instanceName}`);
 }
 
-async function sendText(instanceName, phone, text) {
+async function sendText(instanceName, phone, text, { quoted } = {}) {
   const number = String(phone).replace(/\D/g, '');
-  const { data } = await http.post(`/message/sendText/${instanceName}`, {
-    number,
-    text,
-  });
+  const payload = { number, text };
+  // quoted: { id, fromMe, body } — Evolution aceita objeto com key + message minima
+  if (quoted?.id) {
+    payload.quoted = {
+      key: { id: quoted.id, fromMe: !!quoted.fromMe, remoteJid: `${number}@s.whatsapp.net` },
+      message: { conversation: quoted.body || '' },
+    };
+  }
+  const { data } = await http.post(`/message/sendText/${instanceName}`, payload);
   return { id: data?.key?.id || data?.messageId || null, raw: data };
+}
+
+// Envia reação (emoji) a uma mensagem
+async function sendReaction(instanceName, { remoteJid, fromMe, msgId, emoji }) {
+  try {
+    const { data } = await http.post(`/message/sendReaction/${instanceName}`, {
+      reactionMessage: {
+        key: { id: msgId, fromMe: !!fromMe, remoteJid },
+        reaction: emoji || '',
+      },
+    });
+    return { id: data?.key?.id || null, raw: data };
+  } catch (e) { console.warn('[evo] sendReaction:', e.response?.data || e.message); throw e; }
+}
+
+// Edita texto de uma msg ja enviada
+async function editMessage(instanceName, { remoteJid, msgId, text }) {
+  try {
+    const { data } = await http.post(`/message/updateMessage/${instanceName}`, {
+      number: remoteJid.replace(/@.*$/, ''),
+      key: { id: msgId, fromMe: true, remoteJid },
+      text,
+    });
+    return { ok: true, raw: data };
+  } catch (e) { console.warn('[evo] editMessage:', e.response?.data || e.message); throw e; }
+}
+
+// Revoga (delete for everyone) uma msg nossa
+async function deleteMessageForEveryone(instanceName, { remoteJid, msgId }) {
+  try {
+    const { data } = await http.delete(`/chat/deleteMessageForEveryone/${instanceName}`, {
+      data: { id: msgId, fromMe: true, remoteJid },
+    });
+    return { ok: true, raw: data };
+  } catch (e) { console.warn('[evo] deleteMessage:', e.response?.data || e.message); throw e; }
 }
 
 // kind: 'image' | 'video' | 'document' | 'audio'
@@ -156,4 +196,7 @@ module.exports = {
   markAsRead,
   getMessageMediaBase64,
   fetchProfilePicture,
+  sendReaction,
+  editMessage,
+  deleteMessageForEveryone,
 };

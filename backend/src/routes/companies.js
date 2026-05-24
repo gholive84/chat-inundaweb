@@ -35,12 +35,17 @@ router.put('/me', authCompany, authRole('owner'), async (req, res) => {
   }
 });
 
-// Lista agentes (atalho — mesmo que /me retorna mas mais leve)
+// Lista agentes (todos users com vinculo à company — via company_id OU via user_memberships).
+// Inclui owners pra serem atribuidos como atendentes de caixa.
 router.get('/agents', authCompany, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      `SELECT id, name, email, role, avatar_url, active FROM users
-       WHERE company_id=$1 ORDER BY active DESC, name`,
+      `SELECT DISTINCT u.id, u.name, u.email, u.role, u.avatar_url, u.active,
+              COALESCE(m.role, u.role) AS membership_role
+       FROM users u
+       LEFT JOIN user_memberships m ON m.user_id = u.id AND m.company_id = $1
+       WHERE u.company_id = $1 OR m.company_id IS NOT NULL
+       ORDER BY u.active DESC, u.name`,
       [req.user.companyId]
     );
     res.json(rows);

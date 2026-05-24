@@ -21,6 +21,7 @@ const storageRoutes = require('./src/routes/storage');
 const knowledgeRoutes = require('./src/routes/knowledge');
 const adminRoutes = require('./src/routes/admin');
 const scheduledRoutes = require('./src/routes/scheduled');
+const templateRoutes = require('./src/routes/templates');
 
 const initSocket = require('./src/socket');
 
@@ -54,6 +55,7 @@ app.use('/api/storage', storageRoutes);
 app.use('/api/knowledge', knowledgeRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/scheduled', scheduledRoutes);
+app.use('/api/templates', templateRoutes);
 
 app.set('io', io);
 initSocket(io);
@@ -228,6 +230,32 @@ async function runMigrations() {
   await safe(`ALTER TABLE messages DROP CONSTRAINT IF EXISTS messages_provider_msg_id_key`);
   await safe(`DROP INDEX IF EXISTS idx_msg_provider`);
   await safe(`ALTER TABLE messages ADD CONSTRAINT messages_provider_msg_id_key UNIQUE (provider_msg_id)`);
+
+  // ── Status de entrega + edit/delete + quote rico ─────────────────────
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP`);
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMP`);
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMP`);
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP`);
+  // Quoted: alem do FK que ja existia, guardamos snapshot pro caso da original ser deletada
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS quoted_body TEXT`);
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS quoted_from_me BOOLEAN`);
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS quoted_type VARCHAR(20)`);
+  await safe(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS quoted_provider_msg_id VARCHAR(255)`);
+
+  // ── Reações a mensagens ──────────────────────────────────────────────
+  // by_type: contact (cliente) | user (atendente)
+  await safe(`
+    CREATE TABLE IF NOT EXISTS message_reactions (
+      id            SERIAL PRIMARY KEY,
+      message_id    INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+      emoji         VARCHAR(16) NOT NULL,
+      by_type       VARCHAR(20) NOT NULL,
+      by_user_id    INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (message_id, by_type, by_user_id)
+    )
+  `);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_react_msg ON message_reactions(message_id)`);
 
   // ── Notes (notas internas por conversa) ──────────────────────────────
   await safe(`
@@ -414,6 +442,30 @@ async function runMigrations() {
     )
   `);
   await safe(`CREATE INDEX IF NOT EXISTS idx_sched_due ON scheduled_messages(status, scheduled_for) WHERE status='pending'`);
+  // Suporte a mídia em msgs agendadas
+  await safe(`ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS media_url TEXT`);
+  await safe(`ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS media_mime VARCHAR(100)`);
+  await safe(`ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS media_filename VARCHAR(255)`);
+  await safe(`ALTER TABLE scheduled_messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(20)`); // image | document | audio | video
+
+  // ── Quick Replies (templates de resposta com possivel anexo) ──────────
+  await safe(`
+    CREATE TABLE IF NOT EXISTS quick_replies (
+      id              SERIAL PRIMARY KEY,
+      company_id      INTEGER NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+      shortcut        VARCHAR(50) NOT NULL,   -- ex: /oi → autocomplete
+      title           VARCHAR(120),
+      body            TEXT,
+      media_url       TEXT,
+      media_mime      VARCHAR(100),
+      media_filename  VARCHAR(255),
+      media_type      VARCHAR(20),             -- image | document | audio | video
+      created_by      INTEGER REFERENCES users(id) ON DELETE SET NULL,
+      created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (company_id, shortcut)
+    )
+  `);
+  await safe(`CREATE INDEX IF NOT EXISTS idx_qr_company ON quick_replies(company_id)`);
 
   // ── AI Knowledge base (arquivos e URLs) ──────────────────────────────
   await safe(`

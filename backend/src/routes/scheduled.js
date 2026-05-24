@@ -1,7 +1,19 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
 const { pool } = require('../config/database');
 const { authCompany } = require('../middleware/auth');
+const storage = require('../services/storage');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+
+function detectKind(mime) {
+  if (!mime) return 'document';
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('video/')) return 'video';
+  if (mime.startsWith('audio/')) return 'audio';
+  return 'document';
+}
 
 // Lista por contato
 router.get('/contact/:contactId', authCompany, async (req, res) => {
@@ -13,6 +25,7 @@ router.get('/contact/:contactId', authCompany, async (req, res) => {
     if (!ct.length) return res.status(404).json({ error: 'Contato não encontrado' });
     const { rows } = await pool.query(`
       SELECT s.id, s.body, s.scheduled_for, s.status, s.sent_at, s.error, s.created_at,
+             s.media_url, s.media_mime, s.media_filename, s.media_type,
              i.id AS instance_id, i.display_name AS instance_label, i.instance_name,
              u.name AS author_name
       FROM scheduled_messages s
@@ -25,18 +38,21 @@ router.get('/contact/:contactId', authCompany, async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Erro interno' }); }
 });
 
-router.post('/contact/:contactId', authCompany, async (req, res) => {
+// Aceita multipart (com mídia) OU JSON (texto puro). Mídia é opcional.
+router.post('/contact/:contactId', authCompany, upload.single('file'), async (req, res) => {
   try {
-    const { body, scheduled_for, instance_id } = req.body;
-    if (!body?.trim()) return res.status(400).json({ error: 'Mensagem obrigatória' });
+    // Body pode vir de JSON ou FormData
+    const body = (req.body?.body || '').trim();
+    const scheduled_for = req.body?.scheduled_for;
+    const instance_id = parseInt(req.body?.instance_id || '0');
+
+    if (!body && !req.file) return res.status(400).json({ error: 'Texto ou arquivo obrigatório' });
     if (!scheduled_for) return res.status(400).json({ error: 'Data/hora obrigatórias' });
     if (!instance_id) return res.status(400).json({ error: 'Selecione a caixa' });
-    // 30s de margem pra cobrir clock skew + latencia de rede
     if (new Date(scheduled_for).getTime() < Date.now() - 30000) {
       return res.status(400).json({ error: 'Data deve ser no futuro' });
     }
 
-    // Valida ownership de contato + instancia
     const { rows: ck } = await pool.query(
       `SELECT
          (SELECT 1 FROM contacts WHERE id=$1 AND company_id=$3) AS c_ok,
@@ -46,10 +62,33 @@ router.post('/contact/:contactId', authCompany, async (req, res) => {
     if (!ck[0]?.c_ok) return res.status(404).json({ error: 'Contato não encontrado' });
     if (!ck[0]?.i_ok) return res.status(404).json({ error: 'Caixa não encontrada' });
 
+    // Upload mídia se houver
+    let mediaUrl = null, mediaMime = null, mediaFilename = null, mediaType = null;
+    if (req.file) {
+      mediaMime = req.file.mimetype;
+      mediaFilename = req.file.originalname;
+      mediaType = detectKind(mediaMime);
+      if (!(await storage.hasS3())) {
+        return res.status(400).json({ error: 'Storage S3 não configurado — mídia em agendadas exige S3' });
+      }
+      try {
+        const up = await storage.uploadBuffer({
+          companyId: req.user.companyId,
+          buffer: req.file.buffer, mimetype: mediaMime,
+          filename: mediaFilename, folder: 'scheduled',
+        });
+        mediaUrl = up.url;
+      } catch (e) { return res.status(500).json({ error: 'Falha ao subir mídia: ' + e.message }); }
+    }
+
     const { rows } = await pool.query(`
-      INSERT INTO scheduled_messages (company_id, contact_id, instance_id, created_by, body, scheduled_for)
-      VALUES ($1,$2,$3,$4,$5,$6) RETURNING id, body, scheduled_for, status
-    `, [req.user.companyId, req.params.contactId, instance_id, req.user.id, body, scheduled_for]);
+      INSERT INTO scheduled_messages
+        (company_id, contact_id, instance_id, created_by, body, scheduled_for,
+         media_url, media_mime, media_filename, media_type)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      RETURNING id, body, scheduled_for, status, media_url, media_filename, media_type
+    `, [req.user.companyId, req.params.contactId, instance_id, req.user.id,
+        body || '', scheduled_for, mediaUrl, mediaMime, mediaFilename, mediaType]);
     res.status(201).json(rows[0]);
   } catch (err) { console.error('POST /scheduled', err); res.status(500).json({ error: 'Erro interno' }); }
 });

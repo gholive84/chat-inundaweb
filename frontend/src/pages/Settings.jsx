@@ -6,6 +6,7 @@ import { getPermission, requestPermission, notify } from '../services/notificati
 const TABS = [
   { id: 'app',        label: 'App',         icon: '📱' },
   { id: 'ai',         label: 'IA por Caixa', icon: '🤖' },
+  { id: 'templates',  label: 'Templates',   icon: '⚡' },
   { id: 'agents',     label: 'Atendentes',  icon: '👥' },
 ];
 
@@ -577,6 +578,138 @@ function KnowledgePanel({ instanceId }) {
   );
 }
 
+// ─── Tab Templates (respostas rápidas com mídia) ───────────────────
+function TabTemplates() {
+  const [items, setItems] = useState([]);
+  const [editing, setEditing] = useState(null);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({ shortcut: '/', title: '', body: '', file: null });
+  const [err, setErr] = useState('');
+
+  function load() { api.get('/templates').then((r) => setItems(r.data)).catch(() => {}); }
+  useEffect(load, []);
+
+  function reset() { setForm({ shortcut: '/', title: '', body: '', file: null }); setEditing(null); setShowForm(false); setErr(''); }
+
+  async function save() {
+    setErr('');
+    try {
+      const data = new FormData();
+      data.append('shortcut', form.shortcut);
+      data.append('title', form.title || '');
+      data.append('body', form.body || '');
+      if (form.file) data.append('file', form.file);
+      if (form.remove_media) data.append('remove_media', 'true');
+      if (editing) await api.put(`/templates/${editing.id}`, data, { headers: { 'Content-Type': 'multipart/form-data' } });
+      else await api.post('/templates', data, { headers: { 'Content-Type': 'multipart/form-data' } });
+      reset(); load();
+    } catch (e) { setErr(e.response?.data?.error || 'Erro'); }
+  }
+  async function del(t) {
+    if (!confirm(`Remover template ${t.shortcut}?`)) return;
+    try { await api.delete(`/templates/${t.id}`); load(); } catch (e) { alert(e.response?.data?.error || 'Erro'); }
+  }
+  function startEdit(t) {
+    setEditing(t);
+    setForm({ shortcut: t.shortcut, title: t.title || '', body: t.body || '', file: null, remove_media: false });
+    setShowForm(true);
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <Notice type="info">
+        Templates aceleram respostas. No chat, digite o atalho (ex: <code className="font-mono-inunda">/oi</code>) e o template é sugerido.
+        Pode ter texto, imagem ou documento — ou os dois.
+      </Notice>
+
+      {!showForm && (
+        <button onClick={() => { reset(); setShowForm(true); }} className={btnPrimary}>+ Novo template</button>
+      )}
+
+      {showForm && (
+        <div className="rounded-xl border p-4 space-y-3"
+          style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+          <p className="text-xs uppercase tracking-wider font-semibold" style={{ color: 'var(--inunda-text-faded)' }}>
+            {editing ? 'Editar template' : 'Novo template'}
+          </p>
+          {err && <Notice type="error">{err}</Notice>}
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Atalho (ex: /oi)">
+              <input value={form.shortcut} onChange={(e) => setForm({ ...form, shortcut: e.target.value })}
+                placeholder="/atalho" className={`${inputCls} font-mono-inunda`} />
+            </Field>
+            <Field label="Título (opcional)">
+              <input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="Saudação inicial" className={inputCls} />
+            </Field>
+          </div>
+          <Field label="Mensagem (opcional se anexar arquivo)">
+            <textarea rows={3} value={form.body} onChange={(e) => setForm({ ...form, body: e.target.value })}
+              placeholder="Olá! Como posso ajudar?" className={`${inputCls} resize-y`} />
+          </Field>
+          {/* Anexo */}
+          <div className="flex items-center gap-2">
+            <label className="cursor-pointer text-xs flex items-center gap-1 px-3 py-1.5 rounded-md border"
+              style={{ color: 'var(--inunda-cyan)', borderColor: 'var(--inunda-border)' }}>
+              📎 {form.file ? 'Trocar arquivo' : (editing?.media_url ? 'Substituir arquivo' : 'Anexar imagem/doc')}
+              <input type="file" className="hidden"
+                accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f && f.size > 25 * 1024 * 1024) { alert('Máx 25MB'); return; }
+                  setForm({ ...form, file: f || null, remove_media: false });
+                  e.target.value = '';
+                }} />
+            </label>
+            {form.file && (
+              <span className="text-xs" style={{ color: 'var(--inunda-text-muted)' }}>
+                {form.file.name} <button onClick={() => setForm({ ...form, file: null })} className="text-red-400 ml-1">×</button>
+              </span>
+            )}
+            {!form.file && editing?.media_filename && (
+              <span className="text-xs" style={{ color: 'var(--inunda-text-muted)' }}>
+                Atual: {editing.media_filename}
+                <button onClick={() => setForm({ ...form, remove_media: true })} className="text-red-400 ml-1">×</button>
+              </span>
+            )}
+            {form.remove_media && <span className="text-[10px] text-red-400">Será removido ao salvar</span>}
+          </div>
+          <div className="flex gap-2">
+            <button onClick={save} disabled={!form.shortcut || (!form.body.trim() && !form.file && !editing?.media_url)}
+              className={`${btnPrimary} disabled:opacity-40`}>Salvar</button>
+            <button onClick={reset} className="text-sm px-3" style={{ color: 'var(--inunda-text-muted)' }}>Cancelar</button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {items.length === 0 && <p className="text-sm italic" style={{ color: 'var(--inunda-text-faded)' }}>Nenhum template ainda</p>}
+        {items.map((t) => (
+          <div key={t.id} className="rounded-lg border p-3 flex items-start gap-3"
+            style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <code className="text-xs font-mono-inunda font-semibold px-1.5 py-0.5 rounded"
+                  style={{ background: 'var(--inunda-cyan-faint)', color: 'var(--inunda-cyan)' }}>{t.shortcut}</code>
+                {t.title && <span className="text-sm font-medium" style={{ color: 'var(--inunda-text)' }}>{t.title}</span>}
+                {t.media_filename && (
+                  <span className="text-[10px] px-1.5 py-0.5 rounded"
+                    style={{ background: 'rgba(255,255,255,0.05)', color: 'var(--inunda-text-muted)' }}>
+                    📎 {t.media_filename}
+                  </span>
+                )}
+              </div>
+              {t.body && <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--inunda-text-muted)' }}>{t.body}</p>}
+            </div>
+            <button onClick={() => startEdit(t)} className="text-xs px-2" style={{ color: 'var(--inunda-cyan)' }}>Editar</button>
+            <button onClick={() => del(t)} className="text-xs px-2" style={{ color: '#ef4444' }}>×</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── Tab Atendentes ────────────────────────────────────────────────
 function TabAgents() {
   const { user: me } = useAuthStore();
@@ -801,9 +934,10 @@ export default function Settings() {
         </div>
 
         {/* Cada tab é renderizada inteira (não keep-mount pra simplicidade) */}
-        {tab === 'app'    && <TabApp />}
-        {tab === 'ai'     && <TabAI />}
-        {tab === 'agents' && <TabAgents />}
+        {tab === 'app'       && <TabApp />}
+        {tab === 'ai'        && <TabAI />}
+        {tab === 'templates' && <TabTemplates />}
+        {tab === 'agents'    && <TabAgents />}
       </div>
     </div>
   );
