@@ -250,6 +250,82 @@ router.post('/:conversationId/media', authCompany, upload.single('file'), async 
   }
 });
 
+// ── Enviar template como mensagem direto (resolve CORS de baixar S3 no browser) ──
+router.post('/:conversationId/from-template/:templateId', authCompany, async (req, res) => {
+  try {
+    const { rows: tpl } = await pool.query(
+      'SELECT * FROM quick_replies WHERE id=$1 AND company_id=$2',
+      [req.params.templateId, req.user.companyId]
+    );
+    if (!tpl.length) return res.status(404).json({ error: 'Template não encontrado' });
+    const t = tpl[0];
+
+    const { rows: conv } = await pool.query(`
+      SELECT c.id, ct.phone, i.instance_name, co.sign_messages, co.signature_format
+      FROM conversations c
+      JOIN contacts ct ON ct.id = c.contact_id
+      JOIN whatsapp_instances i ON i.id = c.instance_id
+      JOIN companies co ON co.id = c.company_id
+      WHERE c.id=$1 AND c.company_id=$2
+    `, [req.params.conversationId, req.user.companyId]);
+    if (!conv.length) return res.status(404).json({ error: 'Conversa não encontrada' });
+    const c = conv[0];
+
+    let body = t.body || '';
+    if (c.sign_messages && body) {
+      const agentName = req.user.name || 'Atendente';
+      const fmt = c.signature_format || 'bold';
+      const sig = fmt === 'brackets' ? `[${agentName}]` : fmt === 'plain' ? `${agentName}:` : `*${agentName}*`;
+      body = `${sig}\n${body}`;
+    }
+
+    const msgType = t.media_type || 'text';
+    const { rows: ins } = await pool.query(`
+      INSERT INTO messages (conversation_id, from_me, author_type, author_user_id, type, body, media_url, media_mime, media_filename, status)
+      VALUES ($1, TRUE, 'agent', $2, $3, $4, $5, $6, $7, 'pending') RETURNING id
+    `, [c.id, req.user.id, msgType, body, t.media_url, t.media_mime, t.media_filename]);
+    const msgId = ins[0].id;
+
+    await pool.query(
+      `UPDATE conversations SET ai_paused_until = NOW() + INTERVAL '10 minutes',
+                                last_message_at = NOW(),
+                                last_message_preview = $1,
+                                assigned_to_user_id = COALESCE(assigned_to_user_id, $2)
+       WHERE id=$3`,
+      [(body || `[${msgType}]`).slice(0, 200), req.user.id, c.id]
+    );
+
+    try {
+      let sent;
+      if (t.media_url) {
+        sent = await evolution.sendMedia(c.instance_name, c.phone, {
+          kind: t.media_type || 'document',
+          base64: t.media_url, // URL passa direto pro Evolution
+          mimetype: t.media_mime || 'application/octet-stream',
+          fileName: t.media_filename || 'arquivo',
+          caption: body,
+        });
+      } else {
+        sent = await evolution.sendText(c.instance_name, c.phone, body);
+      }
+      await pool.query('UPDATE messages SET status=$1, provider_msg_id=$2 WHERE id=$3',
+        ['sent', sent?.id || null, msgId]);
+    } catch (e) {
+      await pool.query('UPDATE messages SET status=$1, error=$2 WHERE id=$3',
+        ['failed', e.message?.slice(0, 500), msgId]);
+      return res.status(502).json({ error: 'Falha ao enviar template', detail: e.message });
+    }
+
+    const io = req.app.get('io');
+    io?.to(`conv:${c.id}`).emit('message:new', { conversationId: c.id });
+    io?.to(`company:${req.user.companyId}`).emit('conversation:update', { conversationId: c.id });
+    res.status(201).json({ ok: true });
+  } catch (err) {
+    console.error('POST /messages/from-template', err);
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
 // ── Reações ─────────────────────────────────────────────────────────
 // Toggle/upsert emoji por user no msg
 router.post('/reactions/:msgId', authCompany, async (req, res) => {

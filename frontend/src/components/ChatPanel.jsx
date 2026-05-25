@@ -31,13 +31,26 @@ function MediaRender({ m, fromMe }) {
   const t = TYPE_LABEL[m.type] || { icon: '📄', label: m.type };
   const url = m.media_url;
   if (url && (m.type === 'image' || m.type === 'sticker')) {
+    // Caps: imagem normal ~260x260, sticker ~140x140. Mantém aspect-ratio.
+    const isSticker = m.type === 'sticker';
     return (
-      <a href={url} target="_blank" rel="noreferrer" className="block">
-        <img src={url} alt={t.label} className="rounded-md max-w-full max-h-64 object-cover" />
+      <a href={url} target="_blank" rel="noreferrer" className="block" title="Clique pra abrir em tela cheia">
+        <img src={url} alt={t.label}
+          className="rounded-md object-contain block"
+          style={{
+            maxWidth: isSticker ? 140 : 260,
+            maxHeight: isSticker ? 140 : 260,
+            width: 'auto', height: 'auto',
+          }} />
       </a>
     );
   }
-  if (url && m.type === 'video') return <video src={url} controls className="rounded-md max-w-full max-h-64" />;
+  if (url && m.type === 'video') {
+    return (
+      <video src={url} controls className="rounded-md block"
+        style={{ maxWidth: 300, maxHeight: 260 }} />
+    );
+  }
   if (url && m.type === 'audio') return <AudioPlayer src={url} fromMe={fromMe} />;
   if (url && m.type === 'document') {
     return (
@@ -608,21 +621,17 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
   }
   const onQuoteClick = useCallback((id) => { if (id) scrollToMessage(id); }, []);
 
-  // Templates: aplica selecionado
+  // Templates: aplica selecionado.
+  // Se tem mídia, envia via backend (resolve CORS do S3). Texto puro vai pro input pra editar.
   async function applyTemplate(tpl) {
     setTplOpen(false);
     if (tpl.media_url) {
-      // Reenvia a mídia + caption (refazendo fetch direto)
+      setUploading(true);
       try {
-        setUploading(true);
-        const res = await fetch(tpl.media_url);
-        const blob = await res.blob();
-        const file = new File([blob], tpl.media_filename || 'arquivo', { type: tpl.media_mime || blob.type });
-        await sendFile(file, tpl.body || '');
+        await api.post(`/messages/${conversationId}/from-template/${tpl.id}`);
         setText('');
       } catch (e) {
-        // Fallback: envia só texto
-        setText(tpl.body || '');
+        alert(e.response?.data?.error || 'Falha ao enviar template');
       } finally { setUploading(false); }
     } else {
       setText(tpl.body || '');
