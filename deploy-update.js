@@ -60,12 +60,20 @@ function runSSH(commands) {
 
 async function main() {
   const { CHAT_DB_USER, CHAT_DB_PASS, JWT_SECRET, EVOLUTION_API_KEY } = process.env;
-  const envPrefix = `CHAT_DB_USER='${CHAT_DB_USER}' CHAT_DB_PASS='${CHAT_DB_PASS}' JWT_SECRET='${JWT_SECRET}' EVOLUTION_API_KEY='${EVOLUTION_API_KEY}'`;
+  // Vars do dev (db, jwt, evolution) passadas via SSH prefix.
+  // SMTP_* vivem em /opt/chat-inunda/.env.smtp na VPS (gitignored, criado uma vez).
+  const envPrefix = [
+    `CHAT_DB_USER='${CHAT_DB_USER}'`,
+    `CHAT_DB_PASS='${CHAT_DB_PASS}'`,
+    `JWT_SECRET='${JWT_SECRET}'`,
+    `EVOLUTION_API_KEY='${EVOLUTION_API_KEY}'`,
+  ].join(' ');
   await runSSH([
     { desc: 'Pull latest', cmd: 'cd /opt/chat-inunda && git pull origin main' },
     { desc: 'Build backend image',  cmd: 'cd /opt/chat-inunda && docker build -t chat-inunda-backend:latest .' },
     { desc: 'Build frontend image', cmd: 'cd /opt/chat-inunda && docker build -f Dockerfile.frontend -t chat-inunda-frontend:latest .' },
-    { desc: 'Deploy stack',         cmd: `cd /opt/chat-inunda && ${envPrefix} docker stack deploy -c docker-stack.yml chat --with-registry-auth` },
+    { desc: 'Deploy stack',
+      cmd: `cd /opt/chat-inunda && set -a; [ -f .env.smtp ] && . .env.smtp; set +a; ${envPrefix} docker stack deploy -c docker-stack.yml chat --with-registry-auth` },
     { desc: 'Force redeploy backend',  cmd: 'docker service update --force chat_chat_app' },
     { desc: 'Force redeploy frontend', cmd: 'docker service update --force chat_chat_frontend' },
     { desc: 'Wait 20s',             cmd: 'sleep 20' },

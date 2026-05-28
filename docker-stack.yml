@@ -20,6 +20,12 @@ services:
       EVOLUTION_BASE_URL: http://evolution_api:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY}
       PUBLIC_WEBHOOK_URL: https://chat.inundaweb.com.br/api/webhooks/evolution
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     deploy:
       replicas: 1
       labels:

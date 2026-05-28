@@ -67,6 +67,14 @@ async function handleConnectionUpdate(app, inst, payload) {
         displayName: prev[0]?.display_name,
         at: new Date().toISOString(),
       });
+      // Manda email pros owners (so se SMTP estiver configurado)
+      setImmediate(() => {
+        require('../services/email').sendDisconnectAlert({
+          companyId: inst.company_id,
+          instanceName: prev[0]?.instance_name,
+          displayName: prev[0]?.display_name,
+        }).catch((e) => console.warn('[email alert]', e.message));
+      });
     } else if (mapped === 'connected' && oldStatus === 'disconnected') {
       const io = app?.get?.('io');
       io?.to(`company:${inst.company_id}`).emit('instance:reconnected', {
