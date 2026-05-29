@@ -195,15 +195,16 @@ function Bubble({ m, isActive, searchTerm, onReply, onReact, onEdit, onDelete, o
         </div>
         <ReactionsRow reactions={m.reactions} onReact={onReact ? (e) => onReact(m.id, e) : null} />
 
-        {/* Menu de ações (hover desktop / click mobile) */}
+        {/* Menu de ações: dentro da bolha (canto superior). Mobile: sempre visível 60%; desktop: hover */}
         {!isDeleted && (
-          <div className={`absolute ${fromMe ? '-left-9' : '-right-9'} top-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
+          <div className={`absolute ${fromMe ? 'left-1' : 'right-1'} top-1 z-10 opacity-60 md:opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity`}>
             <button onClick={() => setMenuOpen((v) => !v)}
-              className="w-7 h-7 rounded-full flex items-center justify-center bg-black/40 hover:bg-black/60 text-white/80">
+              aria-label="Ações da mensagem"
+              className="w-6 h-6 rounded-full flex items-center justify-center bg-black/40 hover:bg-black/60 text-white text-xs leading-none">
               ⋯
             </button>
             {menuOpen && (
-              <div className={`absolute top-8 ${fromMe ? 'left-0' : 'right-0'} z-30 min-w-[160px] rounded-lg shadow-xl border text-xs overflow-hidden`}
+              <div className={`absolute top-7 ${fromMe ? 'left-0' : 'right-0'} z-30 min-w-[160px] rounded-lg shadow-xl border text-xs overflow-hidden`}
                 style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
                 <button onClick={() => { setMenuOpen(false); onReply?.(m); }}
                   className="w-full text-left px-3 py-2 hover:bg-white/[0.06] flex items-center gap-2"
@@ -227,7 +228,7 @@ function Bubble({ m, isActive, searchTerm, onReply, onReact, onEdit, onDelete, o
               </div>
             )}
             {reactPickerOpen && (
-              <div className={`absolute top-8 ${fromMe ? 'left-0' : 'right-0'} z-30 rounded-full shadow-xl border flex gap-0.5 px-2 py-1`}
+              <div className={`absolute top-7 ${fromMe ? 'left-0' : 'right-0'} z-30 rounded-full shadow-xl border flex gap-0.5 px-2 py-1`}
                 style={{ background: 'var(--inunda-bg-surface)', borderColor: 'var(--inunda-border)' }}>
                 {REACTION_EMOJIS.map((emoji) => (
                   <button key={emoji} onClick={() => { setReactPickerOpen(false); onReact?.(m.id, emoji); }}
@@ -658,7 +659,7 @@ export default function ChatPanel({ conversationId, onBack, onConvLoaded, onTogg
   ).slice(0, 8);
 
   return (
-    <div className="flex-1 flex flex-col min-h-0 h-full" style={{ background: 'var(--inunda-bg-deep)' }}>
+    <div className="flex-1 flex flex-col min-h-0 min-w-0 h-full overflow-hidden" style={{ background: 'var(--inunda-bg-deep)' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b"
         style={{ borderColor: 'var(--inunda-border)', background: 'var(--inunda-bg-surface)' }}>

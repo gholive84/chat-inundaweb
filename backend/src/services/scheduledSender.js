@@ -10,7 +10,7 @@ async function tick(app) {
   running = true;
   try {
     const { rows } = await pool.query(`
-      SELECT s.id, s.body, s.contact_id, s.instance_id, s.company_id,
+      SELECT s.id, s.body, s.contact_id, s.instance_id, s.company_id, s.created_by,
              s.media_url, s.media_mime, s.media_filename, s.media_type,
              ct.phone, i.instance_name, co.sign_messages, co.signature_format,
              u.name AS author_name
@@ -60,9 +60,9 @@ async function tick(app) {
         }
         const msgType = m.media_type || 'text';
         await pool.query(`
-          INSERT INTO messages (conversation_id, from_me, author_type, type, body, media_url, media_mime, media_filename, status, provider_msg_id)
-          VALUES ($1, TRUE, 'agent', $2, $3, $4, $5, $6, 'sent', $7)
-        `, [convId, msgType, body, m.media_url, m.media_mime, m.media_filename, sent?.id || null]);
+          INSERT INTO messages (conversation_id, from_me, author_type, author_user_id, type, body, media_url, media_mime, media_filename, status, provider_msg_id)
+          VALUES ($1, TRUE, 'agent', $2, $3, $4, $5, $6, $7, 'sent', $8)
+        `, [convId, m.created_by || null, msgType, body, m.media_url, m.media_mime, m.media_filename, sent?.id || null]);
         const preview = (body || `[${msgType}]`).slice(0, 200);
         await pool.query(`
           UPDATE conversations SET last_message_at=NOW(), last_message_preview=$1, ai_paused_until=NOW() + INTERVAL '10 minutes'

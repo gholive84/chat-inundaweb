@@ -165,7 +165,7 @@ export default function Chat() {
     : filter.view === 'me' ? 'Minhas' : filter.view === 'unassigned' ? 'Não atribuídas' : 'Conversas';
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full overflow-hidden">
       {/* Sidebar caixas + marcadores (so desktop) */}
       <InboxSidebar filter={{ ...filter, _refresh: sidebarTick }} onFilterChange={setFilter} />
 

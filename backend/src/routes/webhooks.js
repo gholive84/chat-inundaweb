@@ -227,7 +227,52 @@ async function handleIncomingMessage(app, inst, payload) {
   else if (m?.audioMessage){ type = 'audio'; mediaMime = m.audioMessage.mimetype; }
   else if (m?.videoMessage){ type = 'video'; body = m.videoMessage.caption || ''; mediaMime = m.videoMessage.mimetype; }
   else if (m?.documentMessage){ type = 'document'; mediaFilename = m.documentMessage.fileName; mediaMime = m.documentMessage.mimetype; }
+  else if (m?.documentWithCaptionMessage?.message?.documentMessage) {
+    const doc = m.documentWithCaptionMessage.message.documentMessage;
+    type = 'document'; mediaFilename = doc.fileName; mediaMime = doc.mimetype;
+    body = doc.caption || '';
+  }
   else if (m?.stickerMessage){ type = 'sticker'; mediaMime = m.stickerMessage?.mimetype || 'image/webp'; }
+  // Tipos sem media renderizavel — geramos texto descritivo pra UI nao aparecer vazia
+  else if (m?.locationMessage) {
+    type = 'text';
+    const loc = m.locationMessage;
+    const url = `https://maps.google.com/?q=${loc.degreesLatitude},${loc.degreesLongitude}`;
+    body = `📍 Localização${loc.name ? ` — ${loc.name}` : ''}\n${url}`;
+  }
+  else if (m?.liveLocationMessage) {
+    type = 'text'; body = '📍 Localização ao vivo (não suportado)';
+  }
+  else if (m?.contactMessage) {
+    type = 'text';
+    body = `👤 Contato compartilhado: ${m.contactMessage.displayName || ''}`;
+  }
+  else if (m?.contactsArrayMessage) {
+    type = 'text';
+    const names = (m.contactsArrayMessage.contacts || []).map((c) => c.displayName).filter(Boolean).join(', ');
+    body = `👥 Contatos compartilhados: ${names || '(vários)'}`;
+  }
+  else if (m?.pollCreationMessage || m?.pollCreationMessageV3) {
+    type = 'text';
+    const poll = m.pollCreationMessage || m.pollCreationMessageV3;
+    const opts = (poll.options || []).map((o) => `• ${o.optionName}`).join('\n');
+    body = `📊 Enquete: ${poll.name || ''}\n${opts}`;
+  }
+  else if (m?.buttonsMessage || m?.templateMessage || m?.interactiveMessage) {
+    type = 'text';
+    body = m?.buttonsMessage?.contentText
+        || m?.templateMessage?.hydratedTemplate?.hydratedContentText
+        || m?.interactiveMessage?.body?.text
+        || '[mensagem interativa]';
+  }
+  else if (m?.viewOnceMessage || m?.viewOnceMessageV2) {
+    type = 'text'; body = '🔒 Mensagem efêmera (visualização única)';
+  }
+  // Fallback final: se nao identificou nada e body ta vazio, mostra label legivel
+  if (type === 'text' && !body) {
+    const knownKeys = Object.keys(m || {}).filter((k) => !['messageContextInfo'].includes(k));
+    body = knownKeys.length ? `[tipo de mensagem não suportado: ${knownKeys.join(', ')}]` : '';
+  }
   const isMedia = ['image', 'audio', 'video', 'document', 'sticker'].includes(type);
 
   // ── Quoted message (reply) ─────────────────────────────────────────
